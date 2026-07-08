@@ -41,7 +41,20 @@ paths, not day-1).
 make up        # start Timescale + Redis
 make migrate   # apply db/migrations/*.sql
 make psql      # open a psql shell
+make run-api   # start the HTTP API on :8080
+make swagger   # regenerate the OpenAPI spec into docs/
 ```
+
+## API docs (Swagger)
+
+The HTTP API is documented with OpenAPI, generated from
+[swaggo](https://github.com/swaggo/swag) annotations on the handlers.
+
+- Swagger UI: <http://localhost:8080/swagger/index.html>
+- Spec: `docs/swagger.json` / `docs/swagger.yaml` (regenerate with `make swagger`)
+
+Add annotations to new handlers and rerun `make swagger` to keep the spec in
+sync with the code.
 
 ## Build phases
 

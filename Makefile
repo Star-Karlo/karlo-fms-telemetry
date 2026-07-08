@@ -1,4 +1,14 @@
-.PHONY: up down migrate psql redis-cli logs seed reset
+.PHONY: up down migrate psql redis-cli logs seed reset swagger run-api
+
+# Regenerate the OpenAPI spec from swaggo annotations into docs/
+swagger:
+	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
+	swag init -g cmd/api/main.go -o docs --parseInternal
+	@echo "swagger spec regenerated -> docs/"
+
+# Run the HTTP API (Swagger UI at http://localhost:8080/swagger/index.html)
+run-api:
+	go run ./cmd/api
 
 # Start local infra (Timescale/PostGIS + Redis)
 up:
