@@ -2,20 +2,24 @@
 -- The app connects as a NON-owner role and runs `SET app.current_tenant = '<id>'`
 -- (per transaction). Every query is then automatically scoped to that tenant.
 --
--- NOTE: table owners bypass RLS unless FORCE is set. We FORCE it so even the
--- migration/owner role is subject to the policy — the app must set the GUC.
+-- IMPORTANT: `telemetry` is intentionally EXCLUDED from RLS. TimescaleDB does
+-- not allow row-level security on a hypertable with columnstore/compression
+-- enabled ("columnstore cannot be used on table with row security"), and at
+-- ~2.9M rows/day the 90%+ compression is worth more than RLS on that one table.
+-- Tenant scoping for telemetry is enforced in the QUERY LAYER: every telemetry
+-- read/write must include `WHERE tenant_id = <current tenant>`. RLS still guards
+-- all the low-volume operational tables below.
 
 ALTER TABLE vehicles           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE devices            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE device_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE geofences          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE telemetry          ENABLE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'vehicles','devices','device_assignments','geofences','telemetry'
+    'vehicles','devices','device_assignments','geofences'
   ] LOOP
     EXECUTE format(
       'CREATE POLICY tenant_isolation ON %I '

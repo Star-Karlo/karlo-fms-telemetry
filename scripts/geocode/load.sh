@@ -66,12 +66,12 @@ echo ">> Staging columns:"
 $COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -c "\d kecamatan_staging" || true
 
 # --- 3. Normalize staging -> kecamatan --------------------------------------
-# COD-AB standard columns (lower-cased by ogr LAUNDER): adm3_en/adm3_pcode,
-# adm2_en/adm2_pcode, adm1_en/adm1_pcode. Adjust here if your vintage differs.
+# COD-AB Indonesia (HDX) columns: adm{3,2,1}_name + adm{3,2,1}_pcode
+# (verified via ogrinfo on idn_admin3.shp). Adjust here if your vintage differs.
 $COMPOSE exec -T db psql -U "$PGUSER" -d "$PGDB" -v ON_ERROR_STOP=1 <<'SQL'
 TRUNCATE kecamatan RESTART IDENTITY;
 INSERT INTO kecamatan (kec_code, kec_name, kab_code, kab_name, prov_code, prov_name, geom)
-SELECT adm3_pcode, adm3_en, adm2_pcode, adm2_en, adm1_pcode, adm1_en,
+SELECT adm3_pcode, adm3_name, adm2_pcode, adm2_name, adm1_pcode, adm1_name,
        ST_Multi(geom)::geometry(MultiPolygon, 4326)
 FROM kecamatan_staging;
 DROP TABLE kecamatan_staging;
