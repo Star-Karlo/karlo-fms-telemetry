@@ -5,12 +5,13 @@ migrate-remote:
 	@test -n "$$DATABASE_URL" || { echo "usage: DATABASE_URL=postgres://... make migrate-remote"; exit 1; }
 	./scripts/migrate.sh
 
-# Regenerate OpenAPI specs (api + geocode + ingest) from swaggo annotations
+# Regenerate OpenAPI specs from swaggo annotations. Each service is scoped to
+# its own dirs (-d) so its spec lists only its own endpoints (not siblings').
 swagger:
 	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
-	swag init -g cmd/api/main.go -o docs --parseInternal
-	swag init -g cmd/geocode/main.go -o cmd/geocode/docs --parseInternal
-	swag init -g cmd/ingest/main.go -o cmd/ingest/docs --parseInternal
+	swag init -g main.go -d cmd/api,internal/api         -o docs
+	swag init -g main.go -d cmd/geocode,internal/geocode -o cmd/geocode/docs
+	swag init -g main.go -d cmd/ingest,internal/ingest   -o cmd/ingest/docs
 	@echo "swagger specs regenerated"
 
 # Run the HTTP API (Swagger UI at http://localhost:8080/swagger/index.html)

@@ -15,28 +15,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/healthz": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "system"
-                ],
-                "summary": "Health check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/reverse": {
             "get": {
                 "produces": [
@@ -82,51 +60,9 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/vehicles": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "vehicles"
-                ],
-                "summary": "List vehicles",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/api.Vehicle"
-                            }
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
-        "api.Vehicle": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer"
-                },
-                "make": {
-                    "type": "string"
-                },
-                "model": {
-                    "type": "string"
-                },
-                "plate_no": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
         "geocode.Result": {
             "type": "object",
             "properties": {
