@@ -12,19 +12,26 @@ import (
 
 const maxBody = 4 << 20 // 4 MiB (allows batches)
 
-// Handler serves the ingest endpoints. It enriches each reading with its
-// kecamatan/kota/provinsi in-process via the geocode service, then stores it.
+// Handler serves the telemetry endpoints: write (ingest) and read (live +
+// historical). Ingest enriches each reading with its kecamatan/kota/provinsi
+// in-process via the geocode service, then stores it.
 type Handler struct {
 	geo *geocode.Service
 	w   *Writer
+	r   *Reader
 }
 
-func NewHandler(geo *geocode.Service, w *Writer) *Handler {
-	return &Handler{geo: geo, w: w}
+func NewHandler(geo *geocode.Service, w *Writer, reader *Reader) *Handler {
+	return &Handler{geo: geo, w: w, r: reader}
 }
 
 func (h *Handler) Routes(r chi.Router) {
+	// write
 	r.Post("/v1/ingest/{vendor}", h.handleIngest)
+	// read
+	r.Get("/v1/live", h.handleLiveAll)
+	r.Get("/v1/live/{imei}", h.handleLiveOne)
+	r.Get("/v1/history/{imei}", h.handleHistory)
 }
 
 // IngestResult is the response for a successful ingest.

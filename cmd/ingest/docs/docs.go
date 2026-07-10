@@ -15,6 +15,64 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/v1/history/{imei}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "read"
+                ],
+                "summary": "Historical track for a device over a time range",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device IMEI",
+                        "name": "imei",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (RFC3339); default now-24h",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (RFC3339); default now",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max points (default 1000, max 10000)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ingest.Position"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/ingest/{vendor}": {
             "post": {
                 "description": "Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted \"-\u003e metadata\" (stored in the metadata jsonb).",
@@ -60,6 +118,65 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/live": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "read"
+                ],
+                "summary": "Latest position of every device",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ingest.Position"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/live/{imei}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "read"
+                ],
+                "summary": "Latest position of one device",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Device IMEI",
+                        "name": "imei",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ingest.Position"
                         }
                     },
                     "404": {
@@ -145,6 +262,45 @@ const docTemplate = `{
                     "description": "number of readings written",
                     "type": "integer",
                     "example": 1
+                }
+            }
+        },
+        "ingest.Position": {
+            "type": "object",
+            "properties": {
+                "bearing": {
+                    "type": "number"
+                },
+                "ignition": {
+                    "type": "boolean"
+                },
+                "imei": {
+                    "type": "string"
+                },
+                "kabupaten": {
+                    "type": "string"
+                },
+                "kecamatan": {
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "provinsi": {
+                    "type": "string"
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "speed": {
+                    "type": "number"
+                },
+                "time": {
+                    "description": "gpsCreatedAt",
+                    "type": "string"
                 }
             }
         }

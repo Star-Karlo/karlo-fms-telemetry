@@ -55,6 +55,32 @@ definitions:
         example: 1
         type: integer
     type: object
+  ingest.Position:
+    properties:
+      bearing:
+        type: number
+      ignition:
+        type: boolean
+      imei:
+        type: string
+      kabupaten:
+        type: string
+      kecamatan:
+        type: string
+      lat:
+        type: number
+      lon:
+        type: number
+      provinsi:
+        type: string
+      received_at:
+        type: string
+      speed:
+        type: number
+      time:
+        description: gpsCreatedAt
+        type: string
+    type: object
 info:
   contact: {}
   description: Multi-vendor device telemetry intake. Devices POST readings; each is
@@ -63,6 +89,44 @@ info:
   title: Karlo FMS Ingest Service
   version: "0.1"
 paths:
+  /v1/history/{imei}:
+    get:
+      parameters:
+      - description: Device IMEI
+        in: path
+        name: imei
+        required: true
+        type: string
+      - description: Start time (RFC3339); default now-24h
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339); default now
+        in: query
+        name: to
+        type: string
+      - description: Max points (default 1000, max 10000)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ingest.Position'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Historical track for a device over a time range
+      tags:
+      - read
   /v1/ingest/{vendor}:
     post:
       consumes:
@@ -105,4 +169,42 @@ paths:
       summary: Ingest device telemetry (single reading or batch array)
       tags:
       - ingest
+  /v1/live:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ingest.Position'
+            type: array
+      summary: Latest position of every device
+      tags:
+      - read
+  /v1/live/{imei}:
+    get:
+      parameters:
+      - description: Device IMEI
+        in: path
+        name: imei
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ingest.Position'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Latest position of one device
+      tags:
+      - read
 swagger: "2.0"

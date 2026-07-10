@@ -50,7 +50,7 @@ func main() {
 
 	// Reverse-geocode in-process (shares the geocode PostGIS lookup + Redis cache).
 	geoSvc := geocode.NewService(geocode.NewStore(pool), geocode.NewCache(rdb), precision, ttl)
-	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool))
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool))
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
