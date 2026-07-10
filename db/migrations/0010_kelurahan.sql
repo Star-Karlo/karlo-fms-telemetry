@@ -9,6 +9,9 @@
 -- Source: HDX COD-AB Indonesia (BPS-derived), ADM4 shapefile (idn_admin4.shp).
 -- SHARED reference data — no tenant_id, no RLS.
 
+-- Supersede the ADM3 kecamatan table (0004): its hierarchy now lives here.
+DROP TABLE IF EXISTS kecamatan;
+
 CREATE TABLE kelurahan (
   id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kel_code   text UNIQUE,                        -- ADM4 P-code (BPS)
