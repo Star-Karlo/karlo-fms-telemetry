@@ -59,9 +59,39 @@ The HTTP API is documented with OpenAPI, generated from
 Add annotations to new handlers and rerun `make swagger` to keep the spec in
 sync with the code.
 
+## Services
+
+Each service is a separate binary under `cmd/` (own port, own Swagger),
+deployable as its own container via the shared `Dockerfile`
+(`--build-arg SERVICE=<name>`).
+
+| Service   | Port | Run (dev)         | Purpose                                        |
+|-----------|------|-------------------|------------------------------------------------|
+| `api`     | 8080 | `make run-api`    | REST API (vehicles, drivers, trips, …)         |
+| `geocode` | 8081 | `make run-geocode`| Reverse geocode lat/lon → kecamatan/kota/prov  |
+
+`make up` starts only infra (db + redis) for local `go run`. `make up-app`
+builds + runs the app services in containers too (compose profile `app`).
+
+### geocode
+
+Stateless reverse-geocoder: geohash-keyed **Redis** cache in front of a PostGIS
+`ST_Contains` lookup against the `kecamatan` table.
+
+```bash
+curl "http://localhost:8081/reverse?lat=-6.1751&lon=106.8272"
+# {"lat":-6.1751,"lon":106.8272,"found":true,"cached":false,
+#  "kecamatan":"Gambir","kabupaten":"Kota Jakarta Pusat",
+#  "provinsi":"Dki Jakarta","kecamatan_code":"ID3173080"}
+```
+
+Env: `DATABASE_URL`, `REDIS_ADDR`, `GEOCODE_ADDR`, `GEOHASH_PRECISION` (7),
+`CACHE_TTL_HOURS` (720). Swagger at <http://localhost:8081/swagger/index.html>.
+
 ## Build phases
 
 - [x] **Phase 0** — infra, core schema, RLS, canonical event.
+- [x] **Geocode** — kecamatan master data + reverse-geocode service.
 - [ ] **Phase 1** — ingest core: writer (Timescale history + Redis live state).
 - [ ] **Phase 2** — Teltonika TCP gateway (Codec 8) + device simulator.
 - [ ] **Phase 3** — Safetrucks REST adapter.

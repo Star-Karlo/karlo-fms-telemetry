@@ -1,0 +1,5 @@
+# Keep the build context small & fast
+scripts/geocode/data/
+.git
+*.log
+bin/

@@ -1,14 +1,23 @@
-.PHONY: up down migrate psql redis-cli logs seed reset swagger run-api load-geocode
+.PHONY: up up-app down migrate psql redis-cli logs seed reset swagger run-api run-geocode load-geocode
 
-# Regenerate the OpenAPI spec from swaggo annotations into docs/
+# Regenerate OpenAPI specs (api + geocode) from swaggo annotations
 swagger:
 	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
 	swag init -g cmd/api/main.go -o docs --parseInternal
-	@echo "swagger spec regenerated -> docs/"
+	swag init -g cmd/geocode/main.go -o cmd/geocode/docs --parseInternal
+	@echo "swagger specs regenerated"
 
 # Run the HTTP API (Swagger UI at http://localhost:8080/swagger/index.html)
 run-api:
 	go run ./cmd/api
+
+# Run the geocode service (Swagger UI at http://localhost:8081/swagger/index.html)
+run-geocode:
+	go run ./cmd/geocode
+
+# Start infra + app services (containerized) via the "app" compose profile
+up-app:
+	docker compose --profile app up -d --build
 
 # Load Indonesia kecamatan boundary master data (see scripts/geocode/README.md)
 load-geocode:

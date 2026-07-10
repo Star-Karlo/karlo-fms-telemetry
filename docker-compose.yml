@@ -23,6 +23,26 @@ services:
     volumes:
       - redisdata:/data
 
+  # Reverse-geocode service. Opt-in: `make up-app` (profile "app"); plain
+  # `make up` starts only the infra above (db + redis) for local `go run`.
+  geocode:
+    build:
+      context: .
+      args:
+        SERVICE: geocode
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/fms
+      REDIS_ADDR: redis:6379
+      GEOCODE_ADDR: ":8081"
+    ports:
+      - "8081:8081"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    profiles: ["app"]
+
 volumes:
   dbdata:
   redisdata:
