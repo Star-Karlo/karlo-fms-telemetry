@@ -1,4 +1,60 @@
 basePath: /
+definitions:
+  ingest.GenericReading:
+    properties:
+      altitude:
+        description: altitude -> metadata
+        example: 20
+        type: number
+      bearing:
+        description: heading degrees -> bearing column
+        example: 106
+        type: number
+      createdAt:
+        description: dateCreated (server receive) -> received_at column
+        example: "2026-07-10T13:12:31.530Z"
+        type: string
+      ignitionOn:
+        description: ignition on/off -> ignition column
+        example: false
+        type: boolean
+      imei:
+        description: device IMEI (required)
+        example: "864454076648348"
+        type: string
+      io:
+        additionalProperties:
+          type: string
+        description: full vendor io blob -> metadata
+        type: object
+      latestCreatedAt:
+        description: dateGps (device fix time) -> time column
+        example: "2026-07-10T06:12:29Z"
+        type: string
+      latitude:
+        description: GPS latitude  -> geom column
+        example: -6.68211
+        type: number
+      longitude:
+        description: GPS longitude -> geom column
+        example: 111.4544916
+        type: number
+      sat:
+        description: satellite count -> metadata
+        example: 14
+        type: integer
+      speed:
+        description: speed -> speed column
+        example: 0
+        type: number
+    type: object
+  ingest.IngestResult:
+    properties:
+      stored:
+        description: number of readings written
+        example: 1
+        type: integer
+    type: object
 info:
   contact: {}
   description: Multi-vendor device telemetry intake. Devices POST readings; each is
@@ -11,28 +67,29 @@ paths:
     post:
       consumes:
       - application/json
-      description: Accepts all readings, reverse-geocodes each (kecamatan/kota/provinsi),
-        and stores to the telemetry hypertable keyed by IMEI.
+      description: Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi,
+        and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading
+        object or a JSON array of them. Fields map to telemetry columns except those
+        noted "-> metadata" (stored in the metadata jsonb).
       parameters:
       - description: Vendor/adapter key (e.g. generic)
         in: path
         name: vendor
         required: true
         type: string
-      - description: A reading, or an array of readings
+      - description: A reading (or a JSON array of readings)
         in: body
         name: payload
         required: true
         schema:
-          type: object
+          $ref: '#/definitions/ingest.GenericReading'
       produces:
       - application/json
       responses:
         "202":
           description: Accepted
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/ingest.IngestResult'
         "400":
           description: Bad Request
           schema:

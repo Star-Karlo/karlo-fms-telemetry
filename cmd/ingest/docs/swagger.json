@@ -10,7 +10,7 @@
     "paths": {
         "/v1/ingest/{vendor}": {
             "post": {
-                "description": "Accepts all readings, reverse-geocodes each (kecamatan/kota/provinsi), and stores to the telemetry hypertable keyed by IMEI.",
+                "description": "Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted \"-\u003e metadata\" (stored in the metadata jsonb).",
                 "consumes": [
                     "application/json"
                 ],
@@ -30,12 +30,12 @@
                         "required": true
                     },
                     {
-                        "description": "A reading, or an array of readings",
+                        "description": "A reading (or a JSON array of readings)",
                         "name": "payload",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/ingest.GenericReading"
                         }
                     }
                 ],
@@ -43,8 +43,7 @@
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/ingest.IngestResult"
                         }
                     },
                     "400": {
@@ -65,6 +64,80 @@
                             }
                         }
                     }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "ingest.GenericReading": {
+            "type": "object",
+            "properties": {
+                "altitude": {
+                    "description": "altitude -\u003e metadata",
+                    "type": "number",
+                    "example": 20
+                },
+                "bearing": {
+                    "description": "heading degrees -\u003e bearing column",
+                    "type": "number",
+                    "example": 106
+                },
+                "createdAt": {
+                    "description": "dateCreated (server receive) -\u003e received_at column",
+                    "type": "string",
+                    "example": "2026-07-10T13:12:31.530Z"
+                },
+                "ignitionOn": {
+                    "description": "ignition on/off -\u003e ignition column",
+                    "type": "boolean",
+                    "example": false
+                },
+                "imei": {
+                    "description": "device IMEI (required)",
+                    "type": "string",
+                    "example": "864454076648348"
+                },
+                "io": {
+                    "description": "full vendor io blob -\u003e metadata",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "latestCreatedAt": {
+                    "description": "dateGps (device fix time) -\u003e time column",
+                    "type": "string",
+                    "example": "2026-07-10T06:12:29Z"
+                },
+                "latitude": {
+                    "description": "GPS latitude  -\u003e geom column",
+                    "type": "number",
+                    "example": -6.68211
+                },
+                "longitude": {
+                    "description": "GPS longitude -\u003e geom column",
+                    "type": "number",
+                    "example": 111.4544916
+                },
+                "sat": {
+                    "description": "satellite count -\u003e metadata",
+                    "type": "integer",
+                    "example": 14
+                },
+                "speed": {
+                    "description": "speed -\u003e speed column",
+                    "type": "number",
+                    "example": 0
+                }
+            }
+        },
+        "ingest.IngestResult": {
+            "type": "object",
+            "properties": {
+                "stored": {
+                    "description": "number of readings written",
+                    "type": "integer",
+                    "example": 1
                 }
             }
         }

@@ -27,19 +27,24 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/v1/ingest/{vendor}", h.handleIngest)
 }
 
+// IngestResult is the response for a successful ingest.
+type IngestResult struct {
+	Stored int `json:"stored" example:"1"` // number of readings written
+}
+
 // handleIngest godoc
 //
-//	@Summary	Ingest device telemetry (single reading or batch array)
-//	@Description	Accepts all readings, reverse-geocodes each (kecamatan/kota/provinsi), and stores to the telemetry hypertable keyed by IMEI.
-//	@Tags		ingest
-//	@Accept		json
-//	@Produce	json
-//	@Param		vendor	path		string	true	"Vendor/adapter key (e.g. generic)"
-//	@Param		payload	body		object	true	"A reading, or an array of readings"
-//	@Success	202		{object}	map[string]any
-//	@Failure	400		{object}	map[string]string
-//	@Failure	404		{object}	map[string]string
-//	@Router		/v1/ingest/{vendor} [post]
+//	@Summary		Ingest device telemetry (single reading or batch array)
+//	@Description	Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted "-> metadata" (stored in the metadata jsonb).
+//	@Tags			ingest
+//	@Accept			json
+//	@Produce		json
+//	@Param			vendor	path		string			true	"Vendor/adapter key (e.g. generic)"
+//	@Param			payload	body		GenericReading	true	"A reading (or a JSON array of readings)"
+//	@Success		202		{object}	IngestResult
+//	@Failure		400		{object}	map[string]string
+//	@Failure		404		{object}	map[string]string
+//	@Router			/v1/ingest/{vendor} [post]
 func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 	vendor := chi.URLParam(r, "vendor")
 	adapter, ok := Adapters[vendor]

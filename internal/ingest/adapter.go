@@ -32,20 +32,21 @@ var Adapters = map[string]Adapter{
 	"generic": genericAdapter{},
 }
 
-// doc is the normalized tracking-document shape. Top-level fields are consistent
+// GenericReading is the JSON body accepted by POST /v1/ingest/generic — either
+// a single object or a JSON array of these. Top-level fields are consistent
 // across our vendors; the `io` object varies and is kept whole in metadata.
-type doc struct {
-	IMEI            string         `json:"imei"`
-	Latitude        float64        `json:"latitude"`
-	Longitude       float64        `json:"longitude"`
-	Bearing         *float64       `json:"bearing"`
-	Speed           *float64       `json:"speed"`
-	IgnitionOn      *bool          `json:"ignitionOn"`
-	CreatedAt       *time.Time     `json:"createdAt"`       // dateCreated
-	LatestCreatedAt *time.Time     `json:"latestCreatedAt"` // dateGps
-	Altitude        *float64       `json:"altitude"`
-	Sat             *int           `json:"sat"`
-	IO              map[string]any `json:"io"`
+type GenericReading struct {
+	IMEI            string         `json:"imei" example:"864454076648348"`                        // device IMEI (required)
+	Latitude        float64        `json:"latitude" example:"-6.68211"`                           // GPS latitude  -> geom column
+	Longitude       float64        `json:"longitude" example:"111.4544916"`                       // GPS longitude -> geom column
+	Bearing         *float64       `json:"bearing" example:"106"`                                 // heading degrees -> bearing column
+	Speed           *float64       `json:"speed" example:"0"`                                     // speed -> speed column
+	IgnitionOn      *bool          `json:"ignitionOn" example:"false"`                            // ignition on/off -> ignition column
+	CreatedAt       *time.Time     `json:"createdAt" example:"2026-07-10T13:12:31.530Z"`          // dateCreated (server receive) -> received_at column
+	LatestCreatedAt *time.Time     `json:"latestCreatedAt" example:"2026-07-10T06:12:29Z"`        // dateGps (device fix time) -> time column
+	Altitude        *float64       `json:"altitude" example:"20"`                                 // altitude -> metadata
+	Sat             *int           `json:"sat" example:"14"`                                      // satellite count -> metadata
+	IO              map[string]any `json:"io" swaggertype:"object,string"`                        // full vendor io blob -> metadata
 }
 
 type genericAdapter struct{}
@@ -63,7 +64,7 @@ func (genericAdapter) Parse(raw []byte) ([]Reading, error) {
 
 	readings := make([]Reading, 0, len(elems))
 	for i, el := range elems {
-		var d doc
+		var d GenericReading
 		if err := json.Unmarshal(el, &d); err != nil {
 			return nil, fmt.Errorf("reading %d: %w", i, err)
 		}
