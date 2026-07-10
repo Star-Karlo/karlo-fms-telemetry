@@ -1,4 +1,4 @@
-.PHONY: up down migrate psql redis-cli logs seed reset swagger run-api
+.PHONY: up down migrate psql redis-cli logs seed reset swagger run-api load-geocode
 
 # Regenerate the OpenAPI spec from swaggo annotations into docs/
 swagger:
@@ -9,6 +9,10 @@ swagger:
 # Run the HTTP API (Swagger UI at http://localhost:8080/swagger/index.html)
 run-api:
 	go run ./cmd/api
+
+# Load Indonesia kecamatan boundary master data (see scripts/geocode/README.md)
+load-geocode:
+	./scripts/geocode/load.sh
 
 # Start local infra (Timescale/PostGIS + Redis)
 up:

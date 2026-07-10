@@ -33,7 +33,9 @@ paths, not day-1).
   trucks; telemetry is attributed to the vehicle it was on *at ping time*).
 - `telemetry` — Timescale hypertable, write path; `vehicle_id` denormalized.
 - `geofences` — PostGIS polygons.
-- Tenant isolation via `tenant_id` + Row-Level Security on every table.
+- `kecamatan` — Indonesia district boundary polygons (reverse-geocode reference
+  data; shared, not tenant-scoped). See [scripts/geocode/](scripts/geocode/).
+- Tenant isolation via `tenant_id` + Row-Level Security on every tenant table.
 
 ## Quickstart
 
@@ -43,6 +45,7 @@ make migrate   # apply db/migrations/*.sql
 make psql      # open a psql shell
 make run-api   # start the HTTP API on :8080
 make swagger   # regenerate the OpenAPI spec into docs/
+make load-geocode  # load Indonesia kecamatan boundaries (reverse-geocode data)
 ```
 
 ## API docs (Swagger)

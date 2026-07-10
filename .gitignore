@@ -14,5 +14,8 @@ node_modules/
 dist/
 .vite/
 
+# Geocode source data (large boundary files)
+scripts/geocode/data/
+
 # OS
 .DS_Store
