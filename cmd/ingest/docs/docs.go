@@ -85,7 +85,7 @@ const docTemplate = `{
         },
         "/v1/ingest/{vendor}": {
             "post": {
-                "description": "Registered IMEIs are stored; unregistered ones are rejected. Partial batches store the registered readings and report the rest.",
+                "description": "Accepts all readings, reverse-geocodes each (kecamatan/kota/provinsi), and stores to the telemetry hypertable keyed by IMEI.",
                 "consumes": [
                     "application/json"
                 ],
@@ -129,13 +129,6 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
                         }
                     },
                     "404": {
@@ -236,7 +229,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Karlo FMS Ingest Service",
-	Description:      "Multi-vendor device telemetry intake. Devices POST readings; registered IMEIs are normalized and stored to the telemetry hypertable.",
+	Description:      "Multi-vendor device telemetry intake. Devices POST readings; each is reverse-geocoded (kecamatan/kota/provinsi) and stored to the telemetry hypertable keyed by IMEI.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

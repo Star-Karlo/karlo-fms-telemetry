@@ -16,24 +16,25 @@ type Adapter interface {
 }
 
 // Adapters maps a vendor/source key (the {vendor} path segment) to its Adapter.
-// Add teltonika/safetrucks etc. here later.
 var Adapters = map[string]Adapter{
 	"generic": genericAdapter{},
 }
 
-// genericReading is the JSON shape the generic adapter accepts. Missing numeric
-// fields default to 0; the original payload is preserved in attrs._raw.
-type genericReading struct {
+// reading is the normalized tracking-document shape. Top-level fields are
+// consistent across our vendors; the `io` object varies and is kept whole.
+// Duplicated signals (e.g. Ignition/Speed also inside io) are resolved to the
+// canonical top-level field here; io is preserved verbatim in attrs.
+type reading struct {
 	IMEI       string         `json:"imei"`
-	Timestamp  *int64         `json:"timestamp"` // unix seconds; nil -> now
-	Lat        float64        `json:"lat"`
-	Lon        float64        `json:"lon"`
-	SpeedKmh   float64        `json:"speed_kmh"`
-	Heading    float64        `json:"heading"`
-	Ignition   *bool          `json:"ignition"`
-	AltitudeM  *float64       `json:"altitude_m"`
-	Satellites *int           `json:"satellites"`
-	Attrs      map[string]any `json:"attrs"` // vendor-specific extras
+	Latitude   float64        `json:"latitude"`
+	Longitude  float64        `json:"longitude"`
+	Altitude   *float64       `json:"altitude"`
+	Bearing    *float64       `json:"bearing"`
+	Speed      *float64       `json:"speed"`
+	IgnitionOn *bool          `json:"ignitionOn"`
+	Sat        *int           `json:"sat"`
+	CreatedAt  *time.Time     `json:"createdAt"` // RFC3339; nil -> now
+	IO         map[string]any `json:"io"`
 }
 
 type genericAdapter struct{}
@@ -51,7 +52,7 @@ func (genericAdapter) Parse(raw []byte) ([]model.TelemetryEvent, error) {
 
 	events := make([]model.TelemetryEvent, 0, len(elems))
 	for i, el := range elems {
-		var rd genericReading
+		var rd reading
 		if err := json.Unmarshal(el, &rd); err != nil {
 			return nil, fmt.Errorf("reading %d: %w", i, err)
 		}
@@ -60,27 +61,36 @@ func (genericAdapter) Parse(raw []byte) ([]model.TelemetryEvent, error) {
 		}
 
 		ts := time.Now().UTC()
-		if rd.Timestamp != nil {
-			ts = time.Unix(*rd.Timestamp, 0).UTC()
+		if rd.CreatedAt != nil {
+			ts = rd.CreatedAt.UTC()
 		}
 
+		// Keep the full io blob (queryable) + the raw doc (fidelity).
 		attrs := map[string]any{}
-		for k, v := range rd.Attrs {
+		for k, v := range rd.IO {
 			attrs[k] = v
 		}
-		attrs["_raw"] = el // original payload for this reading (re-processable)
+		attrs["_raw"] = el
+
+		var speed, heading float64
+		if rd.Speed != nil {
+			speed = *rd.Speed
+		}
+		if rd.Bearing != nil {
+			heading = *rd.Bearing
+		}
 
 		events = append(events, model.TelemetryEvent{
 			Source:      model.Source("generic"),
 			DeviceIdent: rd.IMEI,
 			Time:        ts,
-			Lat:         rd.Lat,
-			Lon:         rd.Lon,
-			SpeedKmh:    rd.SpeedKmh,
-			Heading:     rd.Heading,
-			Ignition:    rd.Ignition,
-			AltitudeM:   rd.AltitudeM,
-			Satellites:  rd.Satellites,
+			Lat:         rd.Latitude,
+			Lon:         rd.Longitude,
+			SpeedKmh:    speed,
+			Heading:     heading,
+			Ignition:    rd.IgnitionOn,
+			AltitudeM:   rd.Altitude,
+			Satellites:  rd.Sat,
 			Attrs:       attrs,
 		})
 	}

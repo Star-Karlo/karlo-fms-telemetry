@@ -2,7 +2,7 @@
 //
 //	@title			Karlo FMS Ingest Service
 //	@version		0.1
-//	@description	Multi-vendor device telemetry intake. Devices POST readings; registered IMEIs are normalized and stored to the telemetry hypertable.
+//	@description	Multi-vendor device telemetry intake. Devices POST readings; each is reverse-geocoded (kecamatan/kota/provinsi) and stored to the telemetry hypertable keyed by IMEI.
 //	@BasePath		/
 package main
 
@@ -21,6 +21,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	_ "github.com/karlo/fms/cmd/ingest/docs"
+	"github.com/karlo/fms/internal/geocode"
 	"github.com/karlo/fms/internal/ingest"
 )
 
@@ -30,7 +31,8 @@ func main() {
 	dbURL := env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fms")
 	redisAddr := env("REDIS_ADDR", "localhost:6379")
 	addr := env("INGEST_ADDR", ":8082")
-	refresh := time.Duration(envInt("REGISTRY_REFRESH_SECONDS", 45)) * time.Second
+	precision := uint(envInt("GEOHASH_PRECISION", 7))
+	ttl := time.Duration(envInt("CACHE_TTL_HOURS", 720)) * time.Hour
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
@@ -46,13 +48,9 @@ func main() {
 		log.Fatalf("redis ping: %v", err)
 	}
 
-	reg := ingest.NewRegistry(pool)
-	if err := reg.StartRefresh(ctx, refresh, func(e error) { log.Printf("registry refresh error: %v", e) }); err != nil {
-		log.Fatalf("registry initial load: %v", err)
-	}
-	log.Printf("device registry loaded: %d devices (refresh every %s)", reg.Size(), refresh)
-
-	h := ingest.NewHandler(reg, ingest.NewWriter(pool, rdb))
+	// Reverse-geocode in-process (shares the geocode PostGIS lookup + Redis cache).
+	geoSvc := geocode.NewService(geocode.NewStore(pool), geocode.NewCache(rdb), precision, ttl)
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool))
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
