@@ -1,0 +1,24 @@
+# CodeBuild spec: build the geocode container and push to ECR, then emit
+# imagedefinitions.json for the CodePipeline ECS deploy stage.
+# Env vars (ECR_REPO, SERVICE, CONTAINER_NAME, AWS_DEFAULT_REGION) come from the
+# CodeBuild project (see infra/pipeline.tf).
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - REGISTRY=$(echo "$ECR_REPO" | cut -d/ -f1)
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+      - IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION:-latest}
+  build:
+    commands:
+      - docker build --build-arg SERVICE="$SERVICE" -t "$ECR_REPO:$IMAGE_TAG" -t "$ECR_REPO:latest" .
+  post_build:
+    commands:
+      - docker push "$ECR_REPO:$IMAGE_TAG"
+      - docker push "$ECR_REPO:latest"
+      - printf '[{"name":"%s","imageUri":"%s"}]' "$CONTAINER_NAME" "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
