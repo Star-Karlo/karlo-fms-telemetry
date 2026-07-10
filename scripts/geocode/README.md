@@ -12,13 +12,19 @@ with a PostGIS point-in-polygon query.
 ## Run
 
 ```bash
+# Local (docker compose DB):
 make up            # ensure Timescale/PostGIS + Redis are running
 make migrate       # ensure 0004_geocode.sql is applied
 make load-geocode  # runs scripts/geocode/load.sh
+
+# Remote (e.g. Tiger Cloud) — target any DATABASE_URL:
+DATABASE_URL="postgres://tsdbadmin:...@...tsdb.cloud.timescale.com:5432/tsdb?sslmode=require" \
+  ./scripts/geocode/load.sh
 ```
 
-The loader uses a **Docker GDAL image** (`ghcr.io/osgeo/gdal`) for `ogr2ogr`, so
-no host GDAL install is needed.
+The loader derives its target from `DATABASE_URL` (default: local compose DB),
+uses a **Docker GDAL image** (`ghcr.io/osgeo/gdal`) for `ogr2ogr` (no host GDAL
+install), and `psql` for the normalize step.
 
 ## Manual download (HDX blocks scripted pulls)
 
@@ -26,17 +32,15 @@ If the script reports no shapefile, download it by hand:
 
 1. Open <https://data.humdata.org/dataset/cod-ab-idn>
 2. Download the **shapefile** zip (contains ADM0–4).
-3. Unzip its contents into `scripts/geocode/data/`.
-4. Re-run `make load-geocode`.
-
-Alternatively set `HDX_URL=<direct-zip-url> make load-geocode`.
+3. Unzip its contents into `scripts/geocode/data/` (the loader finds `*adm*3*.shp`).
+4. Re-run the loader.
 
 ## Column mapping
 
-The normalizer expects the COD-AB standard columns (lower-cased by ogr2ogr):
-`adm3_en/adm3_pcode`, `adm2_en/adm2_pcode`, `adm1_en/adm1_pcode`. If your dataset
-vintage uses different names, the loader prints the staging table's columns —
-adjust the `INSERT ... SELECT` in `load.sh` accordingly.
+The normalizer maps the COD-AB Indonesia columns (lower-cased by ogr2ogr):
+`adm3_name/adm3_pcode`, `adm2_name/adm2_pcode`, `adm1_name/adm1_pcode`. If a
+different dataset vintage uses other names, adjust the `INSERT ... SELECT` in
+`load.sh`.
 
 ## Data directory
 
