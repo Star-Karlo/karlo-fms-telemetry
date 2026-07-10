@@ -1,15 +1,16 @@
-.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-api run-geocode load-geocode
+.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-api run-geocode run-ingest load-geocode
 
 # Apply migrations against $DATABASE_URL via host psql (remote DBs, e.g. Tiger Cloud)
 migrate-remote:
 	@test -n "$$DATABASE_URL" || { echo "usage: DATABASE_URL=postgres://... make migrate-remote"; exit 1; }
 	./scripts/migrate.sh
 
-# Regenerate OpenAPI specs (api + geocode) from swaggo annotations
+# Regenerate OpenAPI specs (api + geocode + ingest) from swaggo annotations
 swagger:
 	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
 	swag init -g cmd/api/main.go -o docs --parseInternal
 	swag init -g cmd/geocode/main.go -o cmd/geocode/docs --parseInternal
+	swag init -g cmd/ingest/main.go -o cmd/ingest/docs --parseInternal
 	@echo "swagger specs regenerated"
 
 # Run the HTTP API (Swagger UI at http://localhost:8080/swagger/index.html)
@@ -19,6 +20,10 @@ run-api:
 # Run the geocode service (Swagger UI at http://localhost:8081/swagger/index.html)
 run-geocode:
 	go run ./cmd/geocode
+
+# Run the ingest service (Swagger UI at http://localhost:8082/swagger/index.html)
+run-ingest:
+	go run ./cmd/ingest
 
 # Start infra + app services (containerized) via the "app" compose profile
 up-app:
