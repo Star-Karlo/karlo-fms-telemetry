@@ -1,4 +1,9 @@
-.PHONY: up up-app down migrate psql redis-cli logs seed reset swagger run-api run-geocode load-geocode
+.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-api run-geocode load-geocode
+
+# Apply migrations against $DATABASE_URL via host psql (remote DBs, e.g. Tiger Cloud)
+migrate-remote:
+	@test -n "$$DATABASE_URL" || { echo "usage: DATABASE_URL=postgres://... make migrate-remote"; exit 1; }
+	./scripts/migrate.sh
 
 # Regenerate OpenAPI specs (api + geocode) from swaggo annotations
 swagger:
