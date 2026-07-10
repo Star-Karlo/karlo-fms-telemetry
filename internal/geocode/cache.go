@@ -14,8 +14,11 @@ type Cache struct {
 	prefix string
 }
 
+// Bump this prefix version whenever the geocode result shape or data source
+// changes, so a deploy ignores stale cache entries instead of serving them.
+// v2: COD-AB kelurahan hierarchy + OSM streets (was kecamatan-only).
 func NewCache(rdb *redis.Client) *Cache {
-	return &Cache{rdb: rdb, prefix: "geo:kec:"}
+	return &Cache{rdb: rdb, prefix: "geo:v2:"}
 }
 
 func (c *Cache) Get(ctx context.Context, hash string) (entry, bool) {
