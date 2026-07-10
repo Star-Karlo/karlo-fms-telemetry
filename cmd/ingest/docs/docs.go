@@ -94,6 +94,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2026-07-10T13:12:31.530Z"
                 },
+                "gpsCreatedAt": {
+                    "description": "dateGps (device fix time) -\u003e time column",
+                    "type": "string",
+                    "example": "2026-07-10T06:12:29Z"
+                },
                 "ignitionOn": {
                     "description": "ignition on/off -\u003e ignition column",
                     "type": "boolean",
@@ -110,11 +115,6 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
-                },
-                "latestCreatedAt": {
-                    "description": "dateGps (device fix time) -\u003e time column",
-                    "type": "string",
-                    "example": "2026-07-10T06:12:29Z"
                 },
                 "latitude": {
                     "description": "GPS latitude  -\u003e geom column",

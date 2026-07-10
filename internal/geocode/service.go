@@ -6,26 +6,39 @@ package geocode
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/mmcloughlin/geohash"
 )
 
-// Place is the administrative location a coordinate falls in.
+// Place is the location a coordinate falls in: the administrative region
+// (kecamatan → kabupaten → provinsi) plus the nearest OSM street, when one is
+// within StreetMaxDistM.
 type Place struct {
+	Kelurahan     string `json:"kelurahan"`      // ADM4 village / urban village
 	Kecamatan     string `json:"kecamatan"`
 	Kabupaten     string `json:"kabupaten"` // kota/kabupaten = the "city" level
 	Provinsi      string `json:"provinsi"`
-	KecamatanCode string `json:"kecamatan_code"` // BPS P-code
+	KelurahanCode string `json:"kelurahan_code"` // BPS ADM4 P-code
+
+	Street      string  `json:"street,omitempty"`        // nearest OSM road name
+	StreetDistM float64 `json:"street_dist_m,omitempty"` // metres to that road
 }
 
-// Result is the reverse-geocode response for one coordinate.
+// Result is the reverse-geocode response for one coordinate. Location fields are
+// always present (empty string when not found / not available), never omitted.
 type Result struct {
-	Lat    float64 `json:"lat"`
-	Lon    float64 `json:"lon"`
-	Found  bool    `json:"found"`
-	Cached bool    `json:"cached"` // true if served from the Redis cache
-	*Place `json:",inline"`
+	Lat       float64 `json:"lat"`
+	Lon       float64 `json:"lon"`
+	Found     bool    `json:"found"`
+	Cached    bool    `json:"cached"` // true if served from the Redis cache
+	Provinsi  string  `json:"provinsi"`
+	Kabupaten string  `json:"kabupaten"` // regency (empty if the ADM2 is a city)
+	Kota      string  `json:"Kota"`      // city (empty if the ADM2 is a regency)
+	Kecamatan string  `json:"kecamatan"`
+	Kelurahan string  `json:"kelurahan"` // village (empty until ADM4 data is loaded)
+	Jalan     string  `json:"jalan"`     // nearest OSM street (empty if none within range)
 }
 
 // entry is what we persist in the cache (positive and negative results alike).
@@ -67,8 +80,17 @@ func (s *Service) Reverse(ctx context.Context, lat, lon float64) (Result, error)
 func result(lat, lon float64, e entry, cached bool) Result {
 	r := Result{Lat: lat, Lon: lon, Found: e.Found, Cached: cached}
 	if e.Found {
-		p := e.Place
-		r.Place = &p
+		r.Provinsi = e.Place.Provinsi
+		r.Kecamatan = e.Place.Kecamatan
+		r.Kelurahan = e.Place.Kelurahan
+		r.Jalan = e.Place.Street
+		// ADM2 name is "Kota X" for cities, else a regency → split into Kota/kabupaten.
+		if kab := e.Place.Kabupaten; strings.HasPrefix(kab, "Kota ") {
+			r.Kota = strings.TrimPrefix(kab, "Kota ")
+		} else {
+			r.Kabupaten = kab
+		}
 	}
+	// Kelurahan (ADM4) is always present but empty until that data is loaded.
 	return r
 }

@@ -71,10 +71,15 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 		row := Row{Reading: rd}
 		// Best-effort city enrichment (in-process, cached). A geocode failure
 		// must never fail an ingest — the row just stores NULL location.
-		if res, gerr := h.geo.Reverse(ctx, rd.Lat, rd.Lon); gerr == nil && res.Found && res.Place != nil {
-			row.Kecamatan = res.Place.Kecamatan
-			row.Kabupaten = res.Place.Kabupaten
-			row.Provinsi = res.Place.Provinsi
+		if res, gerr := h.geo.Reverse(ctx, rd.Lat, rd.Lon); gerr == nil && res.Found {
+			row.Kecamatan = res.Kecamatan
+			row.Provinsi = res.Provinsi
+			// telemetry keeps a single ADM2 column — use whichever is set.
+			if res.Kabupaten != "" {
+				row.Kabupaten = res.Kabupaten
+			} else {
+				row.Kabupaten = res.Kota
+			}
 		}
 		rows = append(rows, row)
 	}

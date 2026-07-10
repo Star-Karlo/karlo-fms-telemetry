@@ -14,6 +14,10 @@ definitions:
         description: dateCreated (server receive) -> received_at column
         example: "2026-07-10T13:12:31.530Z"
         type: string
+      gpsCreatedAt:
+        description: dateGps (device fix time) -> time column
+        example: "2026-07-10T06:12:29Z"
+        type: string
       ignitionOn:
         description: ignition on/off -> ignition column
         example: false
@@ -27,10 +31,6 @@ definitions:
           type: string
         description: full vendor io blob -> metadata
         type: object
-      latestCreatedAt:
-        description: dateGps (device fix time) -> time column
-        example: "2026-07-10T06:12:29Z"
-        type: string
       latitude:
         description: GPS latitude  -> geom column
         example: -6.68211
