@@ -54,19 +54,19 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := adapter.Parse(body)
+	readings, err := adapter.Parse(body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
 	ctx := r.Context()
-	rows := make([]Row, 0, len(events))
-	for _, ev := range events {
-		row := Row{Event: ev, IMEI: ev.DeviceIdent}
+	rows := make([]Row, 0, len(readings))
+	for _, rd := range readings {
+		row := Row{Reading: rd}
 		// Best-effort city enrichment (in-process, cached). A geocode failure
 		// must never fail an ingest — the row just stores NULL location.
-		if res, gerr := h.geo.Reverse(ctx, ev.Lat, ev.Lon); gerr == nil && res.Found && res.Place != nil {
+		if res, gerr := h.geo.Reverse(ctx, rd.Lat, rd.Lon); gerr == nil && res.Found && res.Place != nil {
 			row.Kecamatan = res.Place.Kecamatan
 			row.Kabupaten = res.Place.Kabupaten
 			row.Provinsi = res.Place.Provinsi

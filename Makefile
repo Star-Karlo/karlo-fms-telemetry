@@ -1,4 +1,4 @@
-.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-api run-geocode run-ingest load-geocode
+.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-geocode run-ingest load-geocode
 
 # Apply migrations against $DATABASE_URL via host psql (remote DBs, e.g. Tiger Cloud)
 migrate-remote:
@@ -9,14 +9,9 @@ migrate-remote:
 # its own dirs (-d) so its spec lists only its own endpoints (not siblings').
 swagger:
 	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
-	swag init -g main.go -d cmd/api,internal/api         -o docs
 	swag init -g main.go -d cmd/geocode,internal/geocode -o cmd/geocode/docs
 	swag init -g main.go -d cmd/ingest,internal/ingest   -o cmd/ingest/docs
 	@echo "swagger specs regenerated"
-
-# Run the HTTP API (Swagger UI at http://localhost:8080/swagger/index.html)
-run-api:
-	go run ./cmd/api
 
 # Run the geocode service (Swagger UI at http://localhost:8081/swagger/index.html)
 run-geocode:

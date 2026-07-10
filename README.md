@@ -27,15 +27,17 @@ paths, not day-1).
 
 ## Data model
 
-- `vehicles` — the asset (truck).
-- `devices` — the sensor bolted to a truck (Teltonika IMEI / Safetrucks id).
-- `device_assignments` — **temporal** device↔vehicle link (a box moves between
-  trucks; telemetry is attributed to the vehicle it was on *at ping time*).
-- `telemetry` — Timescale hypertable, write path; `vehicle_id` denormalized.
-- `geofences` — PostGIS polygons.
+Tracking-first (the vehicle/asset registry was removed for now — see `0007`):
+
+- `telemetry` — Timescale hypertable, keyed by `imei`. Required core columns:
+  `time` (dateGps — device fix time), `received_at` (dateCreated), `geom`
+  (lat/long), `bearing`, `speed`, `ignition`; plus `kecamatan/kabupaten/provinsi`
+  (reverse-geocoded at ingest) and `metadata` jsonb (altitude, satellites, full
+  vendor `io`, source, raw payload).
 - `kecamatan` — Indonesia district boundary polygons (reverse-geocode reference
-  data; shared, not tenant-scoped). See [scripts/geocode/](scripts/geocode/).
-- Tenant isolation via `tenant_id` + Row-Level Security on every tenant table.
+  data). See [scripts/geocode/](scripts/geocode/).
+- `geofences` — PostGIS polygons.
+- `tenants` — retained for future multi-tenancy (currently unused by telemetry).
 
 ## Quickstart
 

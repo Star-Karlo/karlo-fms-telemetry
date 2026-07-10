@@ -7,15 +7,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/karlo/fms/internal/model"
 )
 
-// Row is a reading ready to persist: the canonical event, its IMEI, and the
-// reverse-geocoded location. tenant/device/vehicle are deferred (NULL for now).
+// Row is a Reading plus its reverse-geocoded location, ready to persist.
 type Row struct {
-	Event     model.TelemetryEvent
-	IMEI      string
+	Reading   Reading
 	Kecamatan string
 	Kabupaten string
 	Provinsi  string
@@ -32,11 +28,11 @@ func NewWriter(pool *pgxpool.Pool) *Writer {
 
 const insertSQL = `
 INSERT INTO telemetry
-  (time, imei, source, geom, speed_kmh, heading, ignition, altitude_m,
-   satellites, kecamatan, kabupaten, provinsi, attrs)
+  (time, received_at, imei, geom, bearing, speed, ignition,
+   kecamatan, kabupaten, provinsi, metadata)
 VALUES
   ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
-   $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)`
+   $6, $7, $8, $9, $10, $11, $12::jsonb)`
 
 func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 	if len(rows) == 0 {
@@ -45,16 +41,16 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 
 	batch := &pgx.Batch{}
 	for _, r := range rows {
-		attrs, err := json.Marshal(r.Event.Attrs)
+		meta, err := json.Marshal(r.Reading.Metadata)
 		if err != nil {
-			return fmt.Errorf("marshal attrs: %w", err)
+			return fmt.Errorf("marshal metadata: %w", err)
 		}
 		batch.Queue(insertSQL,
-			r.Event.Time, r.IMEI, string(r.Event.Source),
-			r.Event.Lon, r.Event.Lat,
-			r.Event.SpeedKmh, r.Event.Heading, r.Event.Ignition, r.Event.AltitudeM,
-			r.Event.Satellites, nullStr(r.Kecamatan), nullStr(r.Kabupaten), nullStr(r.Provinsi),
-			string(attrs),
+			r.Reading.GPSTime, r.Reading.ReceivedAt, r.Reading.IMEI,
+			r.Reading.Lon, r.Reading.Lat,
+			r.Reading.Bearing, r.Reading.Speed, r.Reading.Ignition,
+			nullStr(r.Kecamatan), nullStr(r.Kabupaten), nullStr(r.Provinsi),
+			string(meta),
 		)
 	}
 
