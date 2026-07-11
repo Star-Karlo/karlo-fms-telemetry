@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -31,6 +32,7 @@ type Position struct {
 	Kabupaten  string     `json:"kabupaten"`
 	Kota       string     `json:"kota"`
 	Provinsi   string     `json:"provinsi"`
+	Metadata   json.RawMessage `json:"metadata"` // vendor io + extras (raw payload excluded)
 }
 
 // Reader serves live (current state) and historical telemetry queries.
@@ -40,14 +42,16 @@ func NewReader(pool *pgxpool.Pool) *Reader { return &Reader{pool: pool} }
 
 const posCols = `imei, time, received_at, ST_Y(geom::geometry), ST_X(geom::geometry),
                  speed, bearing, ignition,
-                 coalesce(kecamatan,''), coalesce(kabupaten,''), coalesce(kota,''), coalesce(provinsi,'')`
+                 coalesce(kecamatan,''), coalesce(kabupaten,''), coalesce(kota,''), coalesce(provinsi,''),
+                 coalesce(metadata, '{}'::jsonb) - '_raw'`
 
 func scanPositions(rows pgx.Rows) ([]Position, error) {
 	out := make([]Position, 0)
 	for rows.Next() {
 		var p Position
 		if err := rows.Scan(&p.IMEI, &p.Time, &p.ReceivedAt, &p.Lat, &p.Lon,
-			&p.Speed, &p.Bearing, &p.Ignition, &p.Kecamatan, &p.Kabupaten, &p.Kota, &p.Provinsi); err != nil {
+			&p.Speed, &p.Bearing, &p.Ignition, &p.Kecamatan, &p.Kabupaten, &p.Kota, &p.Provinsi,
+			&p.Metadata); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
