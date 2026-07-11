@@ -283,6 +283,9 @@ const docTemplate = `{
                 "kecamatan": {
                     "type": "string"
                 },
+                "kota": {
+                    "type": "string"
+                },
                 "lat": {
                     "type": "number"
                 },

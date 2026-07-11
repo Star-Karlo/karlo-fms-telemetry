@@ -80,13 +80,9 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 		// must never fail an ingest — the row just stores NULL location.
 		if res, gerr := h.geo.Reverse(ctx, rd.Lat, rd.Lon); gerr == nil && res.Found {
 			row.Kecamatan = res.Kecamatan
+			row.Kabupaten = res.Kabupaten // regency (empty for cities)
+			row.Kota = res.Kota           // city (empty for regencies)
 			row.Provinsi = res.Provinsi
-			// telemetry keeps a single ADM2 column — use whichever is set.
-			if res.Kabupaten != "" {
-				row.Kabupaten = res.Kabupaten
-			} else {
-				row.Kabupaten = res.Kota
-			}
 		}
 		rows = append(rows, row)
 	}

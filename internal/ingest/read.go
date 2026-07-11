@@ -29,6 +29,7 @@ type Position struct {
 	Ignition   *bool      `json:"ignition"`
 	Kecamatan  string     `json:"kecamatan"`
 	Kabupaten  string     `json:"kabupaten"`
+	Kota       string     `json:"kota"`
 	Provinsi   string     `json:"provinsi"`
 }
 
@@ -39,14 +40,14 @@ func NewReader(pool *pgxpool.Pool) *Reader { return &Reader{pool: pool} }
 
 const posCols = `imei, time, received_at, ST_Y(geom::geometry), ST_X(geom::geometry),
                  speed, bearing, ignition,
-                 coalesce(kecamatan,''), coalesce(kabupaten,''), coalesce(provinsi,'')`
+                 coalesce(kecamatan,''), coalesce(kabupaten,''), coalesce(kota,''), coalesce(provinsi,'')`
 
 func scanPositions(rows pgx.Rows) ([]Position, error) {
 	out := make([]Position, 0)
 	for rows.Next() {
 		var p Position
 		if err := rows.Scan(&p.IMEI, &p.Time, &p.ReceivedAt, &p.Lat, &p.Lon,
-			&p.Speed, &p.Bearing, &p.Ignition, &p.Kecamatan, &p.Kabupaten, &p.Provinsi); err != nil {
+			&p.Speed, &p.Bearing, &p.Ignition, &p.Kecamatan, &p.Kabupaten, &p.Kota, &p.Provinsi); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
