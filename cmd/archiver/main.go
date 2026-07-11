@@ -10,11 +10,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/karlo/fms/internal/archive"
@@ -48,7 +50,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("export %s: %v", day.Format("2006-01-02"), err)
 	}
-	log.Printf("archived %d rows for %s -> %s  (S3 upload: TODO)", n, day.Format("2006-01-02"), path)
+	log.Printf("archived %d rows for %s -> %s", n, day.Format("2006-01-02"), path)
+
+	// Upload to S3 Glacier Instant Retrieval (cheap cold storage, ms retrieval)
+	// when a bucket is configured. Otherwise the Parquet stays local.
+	bucket := os.Getenv("S3_BUCKET")
+	if bucket == "" {
+		log.Printf("S3_BUCKET not set — skipping upload (local file only)")
+		return
+	}
+	key := fmt.Sprintf("telemetry/date=%s/part.parquet", day.Format("2006-01-02"))
+	if err := archive.UploadFile(ctx, bucket, key, path, types.StorageClassGlacierIr); err != nil {
+		log.Fatalf("s3 upload: %v", err)
+	}
+	log.Printf("uploaded -> s3://%s/%s  (GLACIER_IR)", bucket, key)
 }
 
 func env(k, def string) string {
