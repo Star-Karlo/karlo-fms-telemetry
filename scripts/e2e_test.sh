@@ -48,5 +48,5 @@ curl -s "$BASE/v1/history/$IMEI?from=${DAY}T00:00:00Z&to=${DAY}T23:59:59Z" \
   | python3 -c "import sys,json;d=json.load(sys.stdin);print(' points:',len(d));[print('  ',p['time'],'speed',p['speed']) for p in d]"
 
 hr "steps 1-5 complete. Run step 6 with:"
-echo "  ARCHIVE_DATE=$DAY S3_BUCKET=karlo-fms-tracking-cold-storage AWS_PROFILE=Karlo \\"
+echo "  ARCHIVE_DATE=$DAY S3_BUCKET=karlo-fms-cold-storage AWS_PROFILE=Karlo \\"
 echo "    go run ./cmd/archiver"
