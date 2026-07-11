@@ -73,7 +73,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/v1/ingest/{vendor}": {
+        "/v1/ingest": {
             "post": {
                 "description": "Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted \"-\u003e metadata\" (stored in the metadata jsonb).",
                 "consumes": [
@@ -87,13 +87,6 @@ const docTemplate = `{
                 ],
                 "summary": "Ingest device telemetry (single reading or batch array)",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Vendor/adapter key (e.g. generic)",
-                        "name": "vendor",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "A reading (or a JSON array of readings)",
                         "name": "payload",
@@ -113,15 +106,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -291,6 +275,10 @@ const docTemplate = `{
                 },
                 "lon": {
                     "type": "number"
+                },
+                "metadata": {
+                    "description": "vendor io + extras (raw payload excluded)",
+                    "type": "object"
                 },
                 "provinsi": {
                     "type": "string"

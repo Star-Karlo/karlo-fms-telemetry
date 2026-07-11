@@ -18,7 +18,7 @@ DAY="${DAY:-2026-06-10}"   # an "old" day so step 6 can archive it
 IMEI=E2E01
 
 hr(){ printf '\n=============== %s ===============\n' "$1"; }
-post(){ curl -s -XPOST "$BASE/v1/ingest/generic" -H 'Content-Type: application/json' -d "$1" >/dev/null; }
+post(){ curl -s -XPOST "$BASE/v1/ingest" -H 'Content-Type: application/json' -d "$1" >/dev/null; }
 
 hr "0. reset test rows"
 psql "$DB" -qc "DELETE FROM telemetry WHERE imei LIKE 'E2E%'; DELETE FROM latest WHERE imei LIKE 'E2E%';"

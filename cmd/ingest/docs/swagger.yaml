@@ -73,6 +73,9 @@ definitions:
         type: number
       lon:
         type: number
+      metadata:
+        description: vendor io + extras (raw payload excluded)
+        type: object
       provinsi:
         type: string
       received_at:
@@ -129,7 +132,7 @@ paths:
       summary: Historical track for a device over a time range
       tags:
       - read
-  /v1/ingest/{vendor}:
+  /v1/ingest:
     post:
       consumes:
       - application/json
@@ -138,11 +141,6 @@ paths:
         object or a JSON array of them. Fields map to telemetry columns except those
         noted "-> metadata" (stored in the metadata jsonb).
       parameters:
-      - description: Vendor/adapter key (e.g. generic)
-        in: path
-        name: vendor
-        required: true
-        type: string
       - description: A reading (or a JSON array of readings)
         in: body
         name: payload
@@ -158,12 +156,6 @@ paths:
             $ref: '#/definitions/ingest.IngestResult'
         "400":
           description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
           schema:
             additionalProperties:
               type: string

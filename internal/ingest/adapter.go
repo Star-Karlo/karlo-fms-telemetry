@@ -21,16 +21,16 @@ type Reading struct {
 	Metadata   map[string]any // altitude, satellites, full io, source, _raw, …
 }
 
-// Adapter converts a vendor's raw payload into normalized Readings. One adapter
-// per vendor; everything downstream is vendor-agnostic.
+// Adapter converts a raw device payload into normalized Readings. Today there's
+// a single generic adapter (our upstream already normalizes every vendor to one
+// shape); the interface stays so a new device format can be added later without
+// touching the handler.
 type Adapter interface {
 	Parse(raw []byte) ([]Reading, error)
 }
 
-// Adapters maps a vendor/source key (the {vendor} path segment) to its Adapter.
-var Adapters = map[string]Adapter{
-	"generic": genericAdapter{},
-}
+// defaultAdapter parses the normalized payload all sources currently send.
+var defaultAdapter Adapter = genericAdapter{}
 
 // GenericReading is the JSON body accepted by POST /v1/ingest/generic — either
 // a single object or a JSON array of these. Top-level fields are consistent

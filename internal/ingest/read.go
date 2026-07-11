@@ -32,7 +32,7 @@ type Position struct {
 	Kabupaten  string     `json:"kabupaten"`
 	Kota       string     `json:"kota"`
 	Provinsi   string     `json:"provinsi"`
-	Metadata   json.RawMessage `json:"metadata"` // vendor io + extras (raw payload excluded)
+	Metadata   json.RawMessage `json:"metadata" swaggertype:"object"` // vendor io + extras (raw payload excluded)
 }
 
 // Reader serves live (current state) and historical telemetry queries.

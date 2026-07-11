@@ -27,7 +27,7 @@ func NewHandler(geo *geocode.Service, w *Writer, reader *Reader) *Handler {
 
 func (h *Handler) Routes(r chi.Router) {
 	// write
-	r.Post("/v1/ingest/{vendor}", h.handleIngest)
+	r.Post("/v1/ingest", h.handleIngest)
 	// read
 	r.Get("/v1/live", h.handleLiveAll)
 	r.Get("/v1/live/{imei}", h.handleLiveOne)
@@ -46,27 +46,18 @@ type IngestResult struct {
 //	@Tags			ingest
 //	@Accept			json
 //	@Produce		json
-//	@Param			vendor	path		string			true	"Vendor/adapter key (e.g. generic)"
 //	@Param			payload	body		GenericReading	true	"A reading (or a JSON array of readings)"
 //	@Success		202		{object}	IngestResult
 //	@Failure		400		{object}	map[string]string
-//	@Failure		404		{object}	map[string]string
-//	@Router			/v1/ingest/{vendor} [post]
+//	@Router			/v1/ingest [post]
 func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
-	vendor := chi.URLParam(r, "vendor")
-	adapter, ok := Adapters[vendor]
-	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown vendor: " + vendor})
-		return
-	}
-
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "read body"})
 		return
 	}
 
-	readings, err := adapter.Parse(body)
+	readings, err := defaultAdapter.Parse(body)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
