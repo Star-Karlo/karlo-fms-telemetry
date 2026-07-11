@@ -48,9 +48,21 @@ func main() {
 		log.Fatalf("redis ping: %v", err)
 	}
 
+	// Cold reader (Athena over S3 Parquet) for history older than the retention
+	// window. Enabled only when ATHENA_OUTPUT is set; otherwise history is hot-only.
+	retentionDays := envInt("RETENTION_DAYS", 14)
+	var cold *ingest.ColdReader
+	if out := env("ATHENA_OUTPUT", ""); out != "" {
+		cold, err = ingest.NewColdReader(ctx, env("ATHENA_DATABASE", "fms"), env("ATHENA_TABLE", "telemetry_cold"), out)
+		if err != nil {
+			log.Fatalf("athena init: %v", err)
+		}
+		log.Printf("cold reader enabled: %s.%s (boundary %dd)", env("ATHENA_DATABASE", "fms"), env("ATHENA_TABLE", "telemetry_cold"), retentionDays)
+	}
+
 	// Reverse-geocode in-process (shares the geocode PostGIS lookup + Redis cache).
 	geoSvc := geocode.NewService(geocode.NewStore(pool), geocode.NewCache(rdb), precision, ttl)
-	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool))
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays))
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
