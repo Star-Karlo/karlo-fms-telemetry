@@ -46,8 +46,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Max points (default 1000, max 10000)",
+                        "description": "Page size (default 1000, max 10000)",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pass the previous response's next_cursor to get the next page",
+                        "name": "cursor",
                         "in": "query"
                     }
                 ],
@@ -55,10 +61,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/ingest.Position"
-                            }
+                            "$ref": "#/definitions/ingest.HistoryPage"
                         }
                     },
                     "400": {
@@ -236,6 +239,20 @@ const docTemplate = `{
                     "description": "speed -\u003e speed column",
                     "type": "number",
                     "example": 0
+                }
+            }
+        },
+        "ingest.HistoryPage": {
+            "type": "object",
+            "properties": {
+                "next_cursor": {
+                    "type": "string"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ingest.Position"
+                    }
                 }
             }
         },

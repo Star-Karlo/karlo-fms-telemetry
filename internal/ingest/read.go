@@ -81,16 +81,41 @@ func (rd *Reader) LiveOne(ctx context.Context, imei string) (*Position, error) {
 	return &ps[0], nil
 }
 
-func (rd *Reader) History(ctx context.Context, imei string, from, to time.Time, limit int) ([]Position, error) {
-	rows, err := rd.pool.Query(ctx,
-		`SELECT `+posCols+` FROM telemetry
-		 WHERE imei = $1 AND time >= $2 AND time < $3 ORDER BY time LIMIT $4`,
-		imei, from, to, limit)
+// HistoryPage is one page of a device's track. NextCursor is the RFC3339 time to
+// pass back as ?cursor= for the next page; "" means no more data.
+type HistoryPage struct {
+	Points     []Position `json:"points"`
+	NextCursor string     `json:"next_cursor"`
+}
+
+// History returns a page of a device's track in (cursor|from .. to], ascending
+// by time. It over-fetches by one row to detect whether a next page exists.
+func (rd *Reader) History(ctx context.Context, imei string, from, to, cursor time.Time, limit int) (HistoryPage, error) {
+	// Lower bound: the cursor (exclusive) once paging, else `from` (inclusive).
+	lower, op := from, ">="
+	if !cursor.IsZero() {
+		lower, op = cursor, ">"
+	}
+	q := `SELECT ` + posCols + ` FROM telemetry
+	      WHERE imei = $1 AND time ` + op + ` $2 AND time <= $3 ORDER BY time LIMIT $4`
+
+	rows, err := rd.pool.Query(ctx, q, imei, lower, to, limit+1)
 	if err != nil {
-		return nil, err
+		return HistoryPage{}, err
 	}
 	defer rows.Close()
-	return scanPositions(rows)
+
+	ps, err := scanPositions(rows)
+	if err != nil {
+		return HistoryPage{}, err
+	}
+
+	page := HistoryPage{Points: ps}
+	if len(ps) > limit { // there is more — trim and expose a cursor
+		page.Points = ps[:limit]
+		page.NextCursor = ps[limit-1].Time.UTC().Format(time.RFC3339Nano)
+	}
+	return page, nil
 }
 
 // ---- HTTP handlers ----
@@ -141,8 +166,9 @@ func (h *Handler) handleLiveOne(w http.ResponseWriter, r *http.Request) {
 //	@Param		imei	path		string	true	"Device IMEI"
 //	@Param		from	query		string	false	"Start time (RFC3339); default now-24h"
 //	@Param		to		query		string	false	"End time (RFC3339); default now"
-//	@Param		limit	query		int		false	"Max points (default 1000, max 10000)"
-//	@Success	200		{array}		Position
+//	@Param		limit	query		int		false	"Page size (default 1000, max 10000)"
+//	@Param		cursor	query		string	false	"Pass the previous response's next_cursor to get the next page"
+//	@Success	200		{object}	HistoryPage
 //	@Failure	400		{object}	map[string]string
 //	@Router		/v1/history/{imei} [get]
 func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +193,15 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		}
 		to = t
 	}
+	var cursor time.Time
+	if v := q.Get("cursor"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cursor must be RFC3339"})
+			return
+		}
+		cursor = t
+	}
 	limit := defaultHistoryLimit
 	if v := q.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -177,10 +212,10 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		limit = maxHistoryLimit
 	}
 
-	ps, err := h.r.History(r.Context(), imei, from, to, limit)
+	page, err := h.r.History(r.Context(), imei, from, to, cursor, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 		return
 	}
-	writeJSON(w, http.StatusOK, ps)
+	writeJSON(w, http.StatusOK, page)
 }

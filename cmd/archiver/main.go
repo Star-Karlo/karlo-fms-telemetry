@@ -27,7 +27,7 @@ func main() {
 
 	dbURL := env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fms")
 	baseDir := env("ARCHIVE_DIR", "./archive")
-	retentionDays := envInt("RETENTION_DAYS", 30)
+	retentionDays := envInt("RETENTION_DAYS", 14) // 2 weeks hot; older -> cold
 
 	// Which day to archive: an explicit ARCHIVE_DATE, else the day that just
 	// crossed the retention window (now - RETENTION_DAYS).

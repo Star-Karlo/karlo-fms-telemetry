@@ -25,6 +25,7 @@ type Row struct {
 	Ignition   *bool    `parquet:"ignition"`
 	Kecamatan  string   `parquet:"kecamatan"`
 	Kabupaten  string   `parquet:"kabupaten"`
+	Kota       string   `parquet:"kota"`
 	Provinsi   string   `parquet:"provinsi"`
 	Metadata   string   `parquet:"metadata"` // JSON
 }
@@ -41,7 +42,7 @@ SELECT (extract(epoch from time) * 1000)::bigint,
        imei,
        ST_Y(geom::geometry), ST_X(geom::geometry),
        bearing, speed, ignition,
-       coalesce(kecamatan, ''), coalesce(kabupaten, ''), coalesce(provinsi, ''),
+       coalesce(kecamatan, ''), coalesce(kabupaten, ''), coalesce(kota, ''), coalesce(provinsi, ''),
        coalesce(metadata::text, '{}')
 FROM telemetry
 WHERE time >= $1 AND time < $2
@@ -58,7 +59,7 @@ ORDER BY time`
 		var r Row
 		if err := dbRows.Scan(&r.TimeMs, &r.ReceivedMs, &r.IMEI, &r.Lat, &r.Lon,
 			&r.Bearing, &r.Speed, &r.Ignition,
-			&r.Kecamatan, &r.Kabupaten, &r.Provinsi, &r.Metadata); err != nil {
+			&r.Kecamatan, &r.Kabupaten, &r.Kota, &r.Provinsi, &r.Metadata); err != nil {
 			return "", 0, err
 		}
 		rows = append(rows, r)

@@ -48,6 +48,15 @@ definitions:
         example: 0
         type: number
     type: object
+  ingest.HistoryPage:
+    properties:
+      next_cursor:
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/ingest.Position'
+        type: array
+    type: object
   ingest.IngestResult:
     properties:
       stored:
@@ -110,19 +119,21 @@ paths:
         in: query
         name: to
         type: string
-      - description: Max points (default 1000, max 10000)
+      - description: Page size (default 1000, max 10000)
         in: query
         name: limit
         type: integer
+      - description: Pass the previous response's next_cursor to get the next page
+        in: query
+        name: cursor
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/ingest.Position'
-            type: array
+            $ref: '#/definitions/ingest.HistoryPage'
         "400":
           description: Bad Request
           schema:
