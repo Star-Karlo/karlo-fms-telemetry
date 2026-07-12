@@ -447,32 +447,96 @@ func (rd *Reader) LiveAllProjected(ctx context.Context, proj projection) ([]map[
 	return scanProjected(rows)
 }
 
+// LiveMany returns the latest position of a specific set of devices (full fields).
+func (rd *Reader) LiveMany(ctx context.Context, imeis []string) ([]Position, error) {
+	rows, err := rd.pool.Query(ctx, `SELECT `+posCols+` FROM latest WHERE imei = ANY($1) ORDER BY imei`, imeis)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPositions(rows)
+}
+
+// LiveManyProjected returns the latest position of a specific set of devices with
+// a caller-chosen column set — the quickest path for a map of N vehicles
+// (?imeis=a,b,c&fields=lat,lon).
+func (rd *Reader) LiveManyProjected(ctx context.Context, imeis []string, proj projection) ([]map[string]any, error) {
+	rows, err := rd.pool.Query(ctx, `SELECT `+proj.hotSelect()+` FROM latest WHERE imei = ANY($1) ORDER BY imei`, imeis)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanProjected(rows)
+}
+
 // ---- HTTP handlers ----
+
+const maxLiveIMEIs = 5000
 
 // handleLiveAll godoc
 //
-//	@Summary	Latest position of every device
+//	@Summary	Latest position of devices (all, or a specific set)
+//	@Description	Returns the latest fix per device. Use ?imeis= to restrict to a set, and ?fields= to trim columns (e.g. a lightweight map feed: ?fields=lat,lon).
 //	@Tags		read
 //	@Produce	json
+//	@Param		imeis	query	string	false	"Comma-separated IMEIs to return (omit for all devices). Max 5000."
 //	@Param		fields	query	string	false	"Comma-separated columns to return (e.g. lat,lon,speed); omit for all. imei+time always included."
 //	@Success	200	{array}	Position
+//	@Failure	400	{object}	map[string]string
 //	@Router		/v1/live [get]
 func (h *Handler) handleLiveAll(w http.ResponseWriter, r *http.Request) {
-	if fieldsRaw := r.URL.Query().Get("fields"); fieldsRaw != "" {
+	q := r.URL.Query()
+	ctx := r.Context()
+
+	// Optional device subset.
+	var imeis []string
+	if raw := q.Get("imeis"); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if !validIMEI(s) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid imei: " + s})
+				return
+			}
+			imeis = append(imeis, s)
+		}
+		if len(imeis) > maxLiveIMEIs {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many imeis (max 5000)"})
+			return
+		}
+	}
+
+	// Optional column projection.
+	if fieldsRaw := q.Get("fields"); fieldsRaw != "" {
 		proj, err := parseProjection(fieldsRaw)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		ps, err := h.r.LiveAllProjected(r.Context(), proj)
+		var ps []map[string]any
+		if imeis != nil {
+			ps, err = h.r.LiveManyProjected(ctx, imeis, proj)
+		} else {
+			ps, err = h.r.LiveAllProjected(ctx, proj)
+		}
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 			return
 		}
-		writeJSON(w, http.StatusOK, ps)
+		writeJSON(w, http.StatusOK, nonNilMaps(ps))
 		return
 	}
-	ps, err := h.r.LiveAll(r.Context())
+
+	// Full fields.
+	var ps []Position
+	var err error
+	if imeis != nil {
+		ps, err = h.r.LiveMany(ctx, imeis)
+	} else {
+		ps, err = h.r.LiveAll(ctx)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 		return

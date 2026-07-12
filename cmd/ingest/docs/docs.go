@@ -194,14 +194,21 @@ const docTemplate = `{
         },
         "/v1/live": {
             "get": {
+                "description": "Returns the latest fix per device. Use ?imeis= to restrict to a set, and ?fields= to trim columns (e.g. a lightweight map feed: ?fields=lat,lon).",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "read"
                 ],
-                "summary": "Latest position of every device",
+                "summary": "Latest position of devices (all, or a specific set)",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated IMEIs to return (omit for all devices). Max 5000.",
+                        "name": "imeis",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "Comma-separated columns to return (e.g. lat,lon,speed); omit for all. imei+time always included.",
@@ -216,6 +223,15 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/ingest.Position"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
