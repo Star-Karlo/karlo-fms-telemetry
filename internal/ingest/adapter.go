@@ -42,8 +42,7 @@ type GenericReading struct {
 	Bearing         *float64       `json:"bearing" example:"106"`                                 // heading degrees -> bearing column
 	Speed           *float64       `json:"speed" example:"0"`                                     // speed -> speed column
 	IgnitionOn      *bool          `json:"ignitionOn" example:"false"`                            // ignition on/off -> ignition column
-	CreatedAt    *time.Time     `json:"createdAt" example:"2026-07-10T13:12:31.530Z"`   // dateCreated (server receive) -> received_at column
-	GpsCreatedAt *time.Time     `json:"gpsCreatedAt" example:"2026-07-10T06:12:29Z"`    // dateGps (device fix time) -> time column
+	GpsCreatedAt *time.Time     `json:"gpsCreatedAt" example:"2026-07-10T06:12:29Z"`    // dateGps (device fix time) -> time column. received_at is stamped by the server, not sent here.
 	Altitude        *float64       `json:"altitude" example:"20"`                                 // altitude -> metadata
 	Sat             *int           `json:"sat" example:"14"`                                      // satellite count -> metadata
 	IO              map[string]any `json:"io" swaggertype:"object,string"`                        // full vendor io blob -> metadata
@@ -73,19 +72,14 @@ func (genericAdapter) Parse(raw []byte) ([]Reading, error) {
 		}
 
 		now := time.Now().UTC()
-		// dateGps: prefer device fix time, fall back to createdAt, then now.
+		// dateGps: device fix time, fall back to now if the device didn't send one.
 		gps := now
-		switch {
-		case d.GpsCreatedAt != nil:
+		if d.GpsCreatedAt != nil {
 			gps = d.GpsCreatedAt.UTC()
-		case d.CreatedAt != nil:
-			gps = d.CreatedAt.UTC()
 		}
-		// dateCreated: their system's creation time, else now.
+		// received_at is always stamped by us at ingest time (server clock),
+		// never client-supplied — it records when the backend actually got it.
 		received := now
-		if d.CreatedAt != nil {
-			received = d.CreatedAt.UTC()
-		}
 
 		// metadata = full io + non-core fields + raw doc (fidelity).
 		meta := map[string]any{}

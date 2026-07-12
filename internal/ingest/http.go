@@ -16,13 +16,14 @@ const maxBody = 4 << 20 // 4 MiB (allows batches)
 // historical). Ingest enriches each reading with its kecamatan/kota/provinsi
 // in-process via the geocode service, then stores it.
 type Handler struct {
-	geo *geocode.Service
-	w   *Writer
-	r   *Reader
+	geo    *geocode.Service
+	w      *Writer
+	r      *Reader
+	apiKey string // if set, POST /v1/ingest requires this in the X-Ingest-Key header
 }
 
-func NewHandler(geo *geocode.Service, w *Writer, reader *Reader) *Handler {
-	return &Handler{geo: geo, w: w, r: reader}
+func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, apiKey string) *Handler {
+	return &Handler{geo: geo, w: w, r: reader, apiKey: apiKey}
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -46,11 +47,19 @@ type IngestResult struct {
 //	@Tags			ingest
 //	@Accept			json
 //	@Produce		json
+//	@Param			X-Ingest-Key	header		string			false	"Shared ingest API key (required when the service is configured with one)"
 //	@Param			payload	body		GenericReading	true	"A reading (or a JSON array of readings)"
 //	@Success		202		{object}	IngestResult
 //	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string
 //	@Router			/v1/ingest [post]
 func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
+	// API-key gate: enforced only when the service is configured with a key.
+	if h.apiKey != "" && r.Header.Get("X-Ingest-Key") != h.apiKey {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or missing X-Ingest-Key"})
+		return
+	}
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "read body"})
@@ -71,9 +80,11 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 		// must never fail an ingest — the row just stores NULL location.
 		if res, gerr := h.geo.Reverse(ctx, rd.Lat, rd.Lon); gerr == nil && res.Found {
 			row.Kecamatan = res.Kecamatan
+			row.Kelurahan = res.Kelurahan // village (ADM4)
 			row.Kabupaten = res.Kabupaten // regency (empty for cities)
 			row.Kota = res.Kota           // city (empty for regencies)
 			row.Provinsi = res.Provinsi
+			row.Jalan = res.Jalan // nearest street
 		}
 		rows = append(rows, row)
 	}

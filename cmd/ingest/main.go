@@ -62,7 +62,13 @@ func main() {
 
 	// Reverse-geocode in-process (shares the geocode PostGIS lookup + Redis cache).
 	geoSvc := geocode.NewService(geocode.NewStore(pool), geocode.NewCache(rdb), precision, ttl)
-	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays))
+	apiKey := env("INGEST_API_KEY", "")
+	if apiKey == "" {
+		log.Printf("WARNING: INGEST_API_KEY not set — /v1/ingest is OPEN (no auth)")
+	} else {
+		log.Printf("ingest auth enabled (X-Ingest-Key required)")
+	}
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), apiKey)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)

@@ -47,7 +47,7 @@ func (c *ColdReader) History(ctx context.Context, imei string, lower, upper time
 		hiOp = "<"
 	}
 	q := fmt.Sprintf(`SELECT time_ms, received_ms, lat, lon, speed, bearing, ignition,
-       kecamatan, kabupaten, kota, provinsi, metadata
+       kecamatan, kelurahan, kabupaten, kota, provinsi, jalan, metadata
 FROM %s.%s
 WHERE imei = '%s' AND date BETWEEN '%s' AND '%s'
   AND time_ms %s %d AND time_ms %s %d
@@ -142,10 +142,12 @@ func coldRow(imei string, d []atypes.Datum) Position {
 		p.Ignition = &b
 	}
 	p.Kecamatan = str(get(7))
-	p.Kabupaten = str(get(8))
-	p.Kota = str(get(9))
-	p.Provinsi = str(get(10))
-	p.Metadata = stripRaw(get(11))
+	p.Kelurahan = str(get(8))
+	p.Kabupaten = str(get(9))
+	p.Kota = str(get(10))
+	p.Provinsi = str(get(11))
+	p.Jalan = str(get(12))
+	p.Metadata = stripRaw(get(13))
 	return p
 }
 

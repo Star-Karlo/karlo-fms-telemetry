@@ -13,9 +13,11 @@ import (
 type Row struct {
 	Reading   Reading
 	Kecamatan string
+	Kelurahan string
 	Kabupaten string
 	Kota      string
 	Provinsi  string
+	Jalan     string
 }
 
 // Writer persists telemetry rows in a single batch.
@@ -31,25 +33,26 @@ func NewWriter(pool *pgxpool.Pool) *Writer {
 const insertSQL = `
 INSERT INTO telemetry
   (time, received_at, imei, geom, bearing, speed, ignition,
-   kecamatan, kabupaten, kota, provinsi, metadata)
+   kecamatan, kelurahan, kabupaten, kota, provinsi, jalan, metadata)
 VALUES
   ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
-   $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`
+   $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)`
 
 // upsertLatestSQL keeps one current-state row per device, advancing it only when
 // the incoming GPS fix is newer (so buffered old readings can't overwrite it).
 const upsertLatestSQL = `
 INSERT INTO latest
   (imei, time, received_at, geom, bearing, speed, ignition,
-   kecamatan, kabupaten, kota, provinsi, metadata)
+   kecamatan, kelurahan, kabupaten, kota, provinsi, jalan, metadata)
 VALUES
   ($3, $1, $2, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
-   $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+   $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
 ON CONFLICT (imei) DO UPDATE SET
   time = excluded.time, received_at = excluded.received_at, geom = excluded.geom,
   bearing = excluded.bearing, speed = excluded.speed, ignition = excluded.ignition,
-  kecamatan = excluded.kecamatan, kabupaten = excluded.kabupaten,
-  kota = excluded.kota, provinsi = excluded.provinsi, metadata = excluded.metadata
+  kecamatan = excluded.kecamatan, kelurahan = excluded.kelurahan,
+  kabupaten = excluded.kabupaten, kota = excluded.kota,
+  provinsi = excluded.provinsi, jalan = excluded.jalan, metadata = excluded.metadata
 WHERE excluded.time > latest.time`
 
 func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
@@ -68,7 +71,8 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 			r.Reading.GPSTime, r.Reading.ReceivedAt, r.Reading.IMEI,
 			r.Reading.Lon, r.Reading.Lat,
 			r.Reading.Bearing, r.Reading.Speed, r.Reading.Ignition,
-			nullStr(r.Kecamatan), nullStr(r.Kabupaten), nullStr(r.Kota), nullStr(r.Provinsi),
+			nullStr(r.Kecamatan), nullStr(r.Kelurahan), nullStr(r.Kabupaten),
+			nullStr(r.Kota), nullStr(r.Provinsi), nullStr(r.Jalan),
 			string(meta),
 		}
 		batch.Queue(insertSQL, args...)       // historical (append)

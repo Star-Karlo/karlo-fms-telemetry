@@ -29,9 +29,11 @@ type Position struct {
 	Bearing    *float64   `json:"bearing"`
 	Ignition   *bool      `json:"ignition"`
 	Kecamatan  string     `json:"kecamatan"`
+	Kelurahan  string     `json:"kelurahan"`
 	Kabupaten  string     `json:"kabupaten"`
 	Kota       string     `json:"kota"`
 	Provinsi   string     `json:"provinsi"`
+	Jalan      string     `json:"jalan"`
 	Metadata   json.RawMessage `json:"metadata" swaggertype:"object"` // vendor io + extras (raw payload excluded)
 }
 
@@ -50,7 +52,8 @@ func NewReader(pool *pgxpool.Pool, cold *ColdReader, retentionDays int) *Reader 
 
 const posCols = `imei, time, received_at, ST_Y(geom::geometry), ST_X(geom::geometry),
                  speed, bearing, ignition,
-                 coalesce(kecamatan,''), coalesce(kabupaten,''), coalesce(kota,''), coalesce(provinsi,''),
+                 coalesce(kecamatan,''), coalesce(kelurahan,''), coalesce(kabupaten,''),
+                 coalesce(kota,''), coalesce(provinsi,''), coalesce(jalan,''),
                  coalesce(metadata, '{}'::jsonb) - '_raw'`
 
 func scanPositions(rows pgx.Rows) ([]Position, error) {
@@ -58,7 +61,8 @@ func scanPositions(rows pgx.Rows) ([]Position, error) {
 	for rows.Next() {
 		var p Position
 		if err := rows.Scan(&p.IMEI, &p.Time, &p.ReceivedAt, &p.Lat, &p.Lon,
-			&p.Speed, &p.Bearing, &p.Ignition, &p.Kecamatan, &p.Kabupaten, &p.Kota, &p.Provinsi,
+			&p.Speed, &p.Bearing, &p.Ignition,
+			&p.Kecamatan, &p.Kelurahan, &p.Kabupaten, &p.Kota, &p.Provinsi, &p.Jalan,
 			&p.Metadata); err != nil {
 			return nil, err
 		}

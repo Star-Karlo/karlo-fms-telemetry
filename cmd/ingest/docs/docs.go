@@ -15,6 +15,52 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/reverse": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geocode"
+                ],
+                "summary": "Reverse geocode a coordinate to kecamatan / kota / provinsi",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "example": -6.1751,
+                        "description": "Latitude",
+                        "name": "lat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "example": 106.8272,
+                        "description": "Longitude",
+                        "name": "lon",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/geocode.Result"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/history/{imei}": {
             "get": {
                 "produces": [
@@ -91,6 +137,12 @@ const docTemplate = `{
                 "summary": "Ingest device telemetry (single reading or batch array)",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Shared ingest API key (required when the service is configured with one)",
+                        "name": "X-Ingest-Key",
+                        "in": "header"
+                    },
+                    {
                         "description": "A reading (or a JSON array of readings)",
                         "name": "payload",
                         "in": "body",
@@ -109,6 +161,15 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -180,6 +241,46 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "geocode.Result": {
+            "type": "object",
+            "properties": {
+                "Kota": {
+                    "description": "city (empty if the ADM2 is a regency)",
+                    "type": "string"
+                },
+                "cached": {
+                    "description": "true if served from the Redis cache",
+                    "type": "boolean"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "jalan": {
+                    "description": "nearest OSM street (empty if none within range)",
+                    "type": "string"
+                },
+                "kabupaten": {
+                    "description": "regency (empty if the ADM2 is a city)",
+                    "type": "string"
+                },
+                "kecamatan": {
+                    "type": "string"
+                },
+                "kelurahan": {
+                    "description": "village (empty until ADM4 data is loaded)",
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "provinsi": {
+                    "type": "string"
+                }
+            }
+        },
         "ingest.GenericReading": {
             "type": "object",
             "properties": {
@@ -193,13 +294,8 @@ const docTemplate = `{
                     "type": "number",
                     "example": 106
                 },
-                "createdAt": {
-                    "description": "dateCreated (server receive) -\u003e received_at column",
-                    "type": "string",
-                    "example": "2026-07-10T13:12:31.530Z"
-                },
                 "gpsCreatedAt": {
-                    "description": "dateGps (device fix time) -\u003e time column",
+                    "description": "dateGps (device fix time) -\u003e time column. received_at is stamped by the server, not sent here.",
                     "type": "string",
                     "example": "2026-07-10T06:12:29Z"
                 },
@@ -278,10 +374,16 @@ const docTemplate = `{
                 "imei": {
                     "type": "string"
                 },
+                "jalan": {
+                    "type": "string"
+                },
                 "kabupaten": {
                     "type": "string"
                 },
                 "kecamatan": {
+                    "type": "string"
+                },
+                "kelurahan": {
                     "type": "string"
                 },
                 "kota": {

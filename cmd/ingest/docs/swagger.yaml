@@ -1,5 +1,33 @@
 basePath: /
 definitions:
+  geocode.Result:
+    properties:
+      Kota:
+        description: city (empty if the ADM2 is a regency)
+        type: string
+      cached:
+        description: true if served from the Redis cache
+        type: boolean
+      found:
+        type: boolean
+      jalan:
+        description: nearest OSM street (empty if none within range)
+        type: string
+      kabupaten:
+        description: regency (empty if the ADM2 is a city)
+        type: string
+      kecamatan:
+        type: string
+      kelurahan:
+        description: village (empty until ADM4 data is loaded)
+        type: string
+      lat:
+        type: number
+      lon:
+        type: number
+      provinsi:
+        type: string
+    type: object
   ingest.GenericReading:
     properties:
       altitude:
@@ -10,12 +38,9 @@ definitions:
         description: heading degrees -> bearing column
         example: 106
         type: number
-      createdAt:
-        description: dateCreated (server receive) -> received_at column
-        example: "2026-07-10T13:12:31.530Z"
-        type: string
       gpsCreatedAt:
-        description: dateGps (device fix time) -> time column
+        description: dateGps (device fix time) -> time column. received_at is stamped
+          by the server, not sent here.
         example: "2026-07-10T06:12:29Z"
         type: string
       ignitionOn:
@@ -72,9 +97,13 @@ definitions:
         type: boolean
       imei:
         type: string
+      jalan:
+        type: string
       kabupaten:
         type: string
       kecamatan:
+        type: string
+      kelurahan:
         type: string
       kota:
         type: string
@@ -103,6 +132,37 @@ info:
   title: Karlo FMS Ingest Service
   version: "0.1"
 paths:
+  /reverse:
+    get:
+      parameters:
+      - description: Latitude
+        example: -6.1751
+        in: query
+        name: lat
+        required: true
+        type: number
+      - description: Longitude
+        example: 106.8272
+        in: query
+        name: lon
+        required: true
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/geocode.Result'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Reverse geocode a coordinate to kecamatan / kota / provinsi
+      tags:
+      - geocode
   /v1/history/{imei}:
     get:
       parameters:
@@ -152,6 +212,11 @@ paths:
         object or a JSON array of them. Fields map to telemetry columns except those
         noted "-> metadata" (stored in the metadata jsonb).
       parameters:
+      - description: Shared ingest API key (required when the service is configured
+          with one)
+        in: header
+        name: X-Ingest-Key
+        type: string
       - description: A reading (or a JSON array of readings)
         in: body
         name: payload
@@ -167,6 +232,12 @@ paths:
             $ref: '#/definitions/ingest.IngestResult'
         "400":
           description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
           schema:
             additionalProperties:
               type: string
