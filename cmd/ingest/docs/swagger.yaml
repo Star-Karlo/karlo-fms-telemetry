@@ -79,7 +79,7 @@ definitions:
         type: string
       points:
         items:
-          $ref: '#/definitions/ingest.Position'
+          type: object
         type: array
     type: object
   ingest.IngestResult:
@@ -187,6 +187,17 @@ paths:
         in: query
         name: cursor
         type: string
+      - description: Comma-separated columns to return (e.g. lat,lon,speed); omit
+          for all. imei+time always included. Dropping metadata is the biggest speed/size
+          win.
+        in: query
+        name: fields
+        type: string
+      - description: Downsample the whole range to ~N shape-preserving points (LTTB).
+          When set, pagination is bypassed.
+        in: query
+        name: max_points
+        type: integer
       produces:
       - application/json
       responses:
@@ -247,6 +258,12 @@ paths:
       - ingest
   /v1/live:
     get:
+      parameters:
+      - description: Comma-separated columns to return (e.g. lat,lon,speed); omit
+          for all. imei+time always included.
+        in: query
+        name: fields
+        type: string
       produces:
       - application/json
       responses:

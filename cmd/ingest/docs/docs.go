@@ -101,6 +101,18 @@ const docTemplate = `{
                         "description": "Pass the previous response's next_cursor to get the next page",
                         "name": "cursor",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated columns to return (e.g. lat,lon,speed); omit for all. imei+time always included. Dropping metadata is the biggest speed/size win.",
+                        "name": "fields",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Downsample the whole range to ~N shape-preserving points (LTTB). When set, pagination is bypassed.",
+                        "name": "max_points",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -189,6 +201,14 @@ const docTemplate = `{
                     "read"
                 ],
                 "summary": "Latest position of every device",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated columns to return (e.g. lat,lon,speed); omit for all. imei+time always included.",
+                        "name": "fields",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -347,7 +367,7 @@ const docTemplate = `{
                 "points": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/ingest.Position"
+                        "type": "object"
                     }
                 }
             }
