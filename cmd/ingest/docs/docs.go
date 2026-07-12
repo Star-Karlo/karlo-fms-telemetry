@@ -290,9 +290,9 @@ const docTemplate = `{
                     "example": 20
                 },
                 "bearing": {
-                    "description": "heading degrees -\u003e bearing column",
+                    "description": "heading degrees (float) -\u003e bearing column",
                     "type": "number",
-                    "example": 106
+                    "example": 106.5
                 },
                 "gpsCreatedAt": {
                     "description": "dateGps (device fix time) -\u003e time column. received_at is stamped by the server, not sent here.",

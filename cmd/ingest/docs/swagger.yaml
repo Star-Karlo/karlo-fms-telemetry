@@ -35,8 +35,8 @@ definitions:
         example: 20
         type: number
       bearing:
-        description: heading degrees -> bearing column
-        example: 106
+        description: heading degrees (float) -> bearing column
+        example: 106.5
         type: number
       gpsCreatedAt:
         description: dateGps (device fix time) -> time column. received_at is stamped

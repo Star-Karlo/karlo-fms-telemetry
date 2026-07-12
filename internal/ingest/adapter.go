@@ -39,7 +39,7 @@ type GenericReading struct {
 	IMEI            string         `json:"imei" example:"864454076648348"`                        // device IMEI (required)
 	Latitude        float64        `json:"latitude" example:"-6.68211"`                           // GPS latitude  -> geom column
 	Longitude       float64        `json:"longitude" example:"111.4544916"`                       // GPS longitude -> geom column
-	Bearing         *float64       `json:"bearing" example:"106"`                                 // heading degrees -> bearing column
+	Bearing         *float64       `json:"bearing" example:"106.5"`                               // heading degrees (float) -> bearing column
 	Speed           *float64       `json:"speed" example:"0"`                                     // speed -> speed column
 	IgnitionOn      *bool          `json:"ignitionOn" example:"false"`                            // ignition on/off -> ignition column
 	GpsCreatedAt *time.Time     `json:"gpsCreatedAt" example:"2026-07-10T06:12:29Z"`    // dateGps (device fix time) -> time column. received_at is stamped by the server, not sent here.
