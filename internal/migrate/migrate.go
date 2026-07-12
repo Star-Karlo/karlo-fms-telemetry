@@ -12,7 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,9 +41,86 @@ type legacyRec struct {
 	GpsOn         *bool    `json:"gpsOn"`
 	FakeGps       *bool    `json:"fakeGps"`
 	ErrorDesc     []string `json:"errorDesc"`
-	TrackingCount *int     `json:"trackingCount"`
-	Truck         string   `json:"truck"`
-	TimeReceived  string   `json:"timeReceived"` // the real event time (createdAt is a Mongo artifact)
+	TrackingCount *int      `json:"trackingCount"`
+	Truck         mongoID   `json:"truck"`
+	TimeReceived  mongoTime `json:"timeReceived"` // preferred event time (newer schema)
+	CreatedAt     mongoTime `json:"createdAt"`    // fallback event time (older 2023/2024 schema has no timeReceived)
+}
+
+// mongoTime unmarshals a timestamp in any shape the exports use: a plain RFC3339
+// string, MongoDB relaxed extended JSON {"$date":"ISO"}, or canonical
+// {"$date":{"$numberLong":"millis"}}.
+type mongoTime struct {
+	t  time.Time
+	ok bool
+}
+
+func (m *mongoTime) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	if b[0] == '"' { // plain "ISO"
+		var s string
+		if json.Unmarshal(b, &s) == nil {
+			m.set(s)
+		}
+		return nil
+	}
+	var o struct {
+		Date json.RawMessage `json:"$date"`
+	}
+	if json.Unmarshal(b, &o) != nil || len(o.Date) == 0 {
+		return nil
+	}
+	d := bytes.TrimSpace(o.Date)
+	if len(d) > 0 && d[0] == '"' { // {"$date":"ISO"}
+		var s string
+		if json.Unmarshal(d, &s) == nil {
+			m.set(s)
+		}
+		return nil
+	}
+	var nl struct { // {"$date":{"$numberLong":"ms"}}
+		NumberLong string `json:"$numberLong"`
+	}
+	if json.Unmarshal(d, &nl) == nil && nl.NumberLong != "" {
+		if ms, err := strconv.ParseInt(nl.NumberLong, 10, 64); err == nil {
+			m.t, m.ok = time.UnixMilli(ms).UTC(), true
+		}
+		return nil
+	}
+	var ms int64 // bare epoch millis
+	if json.Unmarshal(d, &ms) == nil {
+		m.t, m.ok = time.UnixMilli(ms).UTC(), true
+	}
+	return nil
+}
+
+func (m *mongoTime) set(s string) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		m.t, m.ok = t.UTC(), true
+	}
+}
+
+// mongoID unmarshals an ObjectId as a plain string or {"$oid":"..."}.
+type mongoID struct{ s string }
+
+func (m *mongoID) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	if b[0] == '"' {
+		return json.Unmarshal(b, &m.s)
+	}
+	var o struct {
+		Oid string `json:"$oid"`
+	}
+	if json.Unmarshal(b, &o) == nil {
+		m.s = o.Oid
+	}
+	return nil
 }
 
 // Migrator holds shared clients/config for processing many source files.
@@ -100,13 +177,24 @@ func (m *Migrator) ProcessFile(ctx context.Context, key string) (FileResult, err
 
 	base := sanitize(strings.TrimSuffix(path.Base(key), ".json"))
 	for date, rows := range byDate {
-		local := filepath.Join(m.TmpDir, "part.parquet")
-		if err := archive.WriteParquet(rows, local); err != nil {
-			return res, fmt.Errorf("write parquet %s/%s: %w", date, key, err)
+		// Unique temp file per write — workers run concurrently and must not
+		// share a path (a shared file gets truncated mid-upload by another worker).
+		tmp, err := os.CreateTemp(m.TmpDir, "part-*.parquet")
+		if err != nil {
+			return res, err
+		}
+		local := tmp.Name()
+		tmp.Close()
+		werr := archive.WriteParquet(rows, local)
+		if werr != nil {
+			os.Remove(local)
+			return res, fmt.Errorf("write parquet %s/%s: %w", date, key, werr)
 		}
 		dstKey := fmt.Sprintf("telemetry/date=%s/hist_%s.parquet", date, base)
-		if err := m.put(ctx, dstKey, local); err != nil {
-			return res, fmt.Errorf("upload %s: %w", dstKey, err)
+		uerr := m.put(ctx, dstKey, local)
+		os.Remove(local)
+		if uerr != nil {
+			return res, fmt.Errorf("upload %s: %w", dstKey, uerr)
 		}
 		res.Rows += len(rows)
 	}
@@ -122,14 +210,19 @@ func (m *Migrator) ProcessFile(ctx context.Context, key string) (FileResult, err
 // recToRow maps a legacy record to an archive.Row + its date partition. Returns
 // ok=false for records with no usable event time / imei.
 func (m *Migrator) recToRow(ctx context.Context, r *legacyRec) (archive.Row, string, bool) {
-	if r.IMEITracker == "" || r.TimeReceived == "" {
+	if r.IMEITracker == "" {
 		return archive.Row{}, "", false
 	}
-	ts, err := time.Parse(time.RFC3339, r.TimeReceived)
-	if err != nil {
+	// Event time: prefer timeReceived (newer schema), else createdAt (2023/2024).
+	var ts time.Time
+	switch {
+	case r.TimeReceived.ok:
+		ts = r.TimeReceived.t
+	case r.CreatedAt.ok:
+		ts = r.CreatedAt.t
+	default:
 		return archive.Row{}, "", false
 	}
-	ts = ts.UTC()
 	ms := ts.UnixMilli()
 
 	row := archive.Row{
@@ -174,7 +267,7 @@ func (m *Migrator) recToRow(ctx context.Context, r *legacyRec) (archive.Row, str
 	if r.TrackingCount != nil {
 		meta["trackingCount"] = *r.TrackingCount
 	}
-	putIfS(meta, "truck", r.Truck)
+	putIfS(meta, "truck", r.Truck.s)
 	if b, err := json.Marshal(meta); err == nil {
 		row.Metadata = string(b)
 	} else {
