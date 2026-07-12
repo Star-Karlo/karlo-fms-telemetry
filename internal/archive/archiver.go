@@ -77,23 +77,27 @@ ORDER BY time`
 	}
 	path := filepath.Join(dir, "part.parquet")
 
+	if err := WriteParquet(rows, path); err != nil {
+		return "", 0, err
+	}
+	return path, len(rows), nil
+}
+
+// WriteParquet writes rows to a Parquet file at path (creating it). An empty
+// slice still writes a valid, header-only file. Reused by the archiver and the
+// legacy migrator.
+func WriteParquet(rows []Row, path string) error {
 	f, err := os.Create(path)
 	if err != nil {
-		return "", 0, err
+		return err
 	}
 	defer f.Close()
 
 	w := parquet.NewGenericWriter[Row](f)
 	if len(rows) > 0 {
 		if _, err := w.Write(rows); err != nil {
-			return "", 0, err
+			return err
 		}
 	}
-	if err := w.Close(); err != nil {
-		return "", 0, err
-	}
-
-	// TODO(archival): upload `path` to s3://<bucket>/telemetry/date=.../part.parquet
-	// (aws-sdk-go PutObject), then enable Timescale retention to drop the chunk.
-	return path, len(rows), nil
+	return w.Close()
 }
