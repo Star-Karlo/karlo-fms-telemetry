@@ -53,6 +53,23 @@ func TestRecToRowFormats(t *testing.T) {
 	}
 }
 
+// errorDesc appears as both ["NORMAL"] and "NORMAL" across the exports; neither
+// must fail the record.
+func TestErrorDescStringOrArray(t *testing.T) {
+	for _, raw := range []string{
+		`{"imeiTracker":"1","latitude":-6,"longitude":106,"timeReceived":"2025-01-01T00:00:00Z","errorDesc":["NORMAL"]}`,
+		`{"imeiTracker":"2","latitude":-6,"longitude":106,"timeReceived":"2025-01-01T00:00:00Z","errorDesc":"NORMAL"}`,
+	} {
+		var r legacyRec
+		if err := json.Unmarshal([]byte(raw), &r); err != nil {
+			t.Fatalf("unmarshal failed on %s: %v", raw, err)
+		}
+		if len(r.ErrorDesc) != 1 || r.ErrorDesc[0] != "NORMAL" {
+			t.Errorf("errorDesc = %v, want [NORMAL] for %s", r.ErrorDesc, raw)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

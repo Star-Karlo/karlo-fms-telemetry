@@ -40,7 +40,7 @@ type legacyRec struct {
 	PDOP          *float64 `json:"PDOP"`
 	GpsOn         *bool    `json:"gpsOn"`
 	FakeGps       *bool    `json:"fakeGps"`
-	ErrorDesc     []string `json:"errorDesc"`
+	ErrorDesc     flexStrings `json:"errorDesc"`
 	TrackingCount *int      `json:"trackingCount"`
 	Truck         mongoID   `json:"truck"`
 	TimeReceived  mongoTime `json:"timeReceived"` // preferred event time (newer schema)
@@ -103,6 +103,31 @@ func (m *mongoTime) set(s string) {
 	}
 }
 
+// flexStrings unmarshals a field that is sometimes a JSON array of strings and
+// sometimes a single string (e.g. errorDesc: ["NORMAL"] vs "NORMAL").
+type flexStrings []string
+
+func (f *flexStrings) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	if b[0] == '[' {
+		var a []string
+		if json.Unmarshal(b, &a) == nil {
+			*f = a
+		}
+		return nil
+	}
+	if b[0] == '"' {
+		var s string
+		if json.Unmarshal(b, &s) == nil {
+			*f = []string{s}
+		}
+	}
+	return nil
+}
+
 // mongoID unmarshals an ObjectId as a plain string or {"$oid":"..."}.
 type mongoID struct{ s string }
 
@@ -134,10 +159,11 @@ type Migrator struct {
 // FileResult summarizes one processed source file.
 type FileResult struct {
 	Key     string
-	Skipped bool // already done (resume marker present)
-	Rows    int
-	Dates   int
-	Parsed  int
+	Skipped    bool // already done (resume marker present)
+	Rows       int
+	Dates      int
+	Parsed     int
+	BadRecords int // records that failed to unmarshal (skipped, not fatal)
 }
 
 // ProcessFile converts one source JSON file into per-day Parquet in the cold
@@ -160,15 +186,23 @@ func (m *Migrator) ProcessFile(ctx context.Context, key string) (FileResult, err
 		return res, fmt.Errorf("read %s: %w", key, err)
 	}
 
-	var recs []legacyRec
-	if err := json.Unmarshal(raw, &recs); err != nil {
+	// Decode the array element-by-element so a single malformed record can't
+	// fail the whole file (the exports have occasional type quirks).
+	var rawRecs []json.RawMessage
+	if err := json.Unmarshal(raw, &rawRecs); err != nil {
 		return res, fmt.Errorf("parse %s: %w", key, err)
 	}
-	res.Parsed = len(recs)
+	raw = nil // free the big buffer; rawRecs holds copies
+	res.Parsed = len(rawRecs)
 
 	byDate := map[string][]archive.Row{}
-	for i := range recs {
-		row, date, ok := m.recToRow(ctx, &recs[i])
+	for _, rr := range rawRecs {
+		var rec legacyRec
+		if err := json.Unmarshal(rr, &rec); err != nil {
+			res.BadRecords++
+			continue
+		}
+		row, date, ok := m.recToRow(ctx, &rec)
 		if !ok {
 			continue
 		}
