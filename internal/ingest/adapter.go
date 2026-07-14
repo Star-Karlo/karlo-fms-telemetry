@@ -95,6 +95,18 @@ func (genericAdapter) Parse(raw []byte) ([]Reading, error) {
 		meta["source"] = "generic"
 		meta["_raw"] = el
 
+		// Reject impossible device clocks. A GPS fix can't be in the future
+		// (allow a little skew for clock drift) and shouldn't be absurdly old;
+		// such values otherwise poison the `latest` upsert (which only advances
+		// on a newer time), freezing the truck's live position. Fall back to the
+		// server receive time, keeping the raw value in metadata for forensics.
+		const maxClockSkew = 5 * time.Minute
+		if gps.After(received.Add(maxClockSkew)) || gps.Before(received.AddDate(-1, 0, 0)) {
+			meta["gps_time_raw"] = gps.Format(time.RFC3339)
+			meta["gps_time_invalid"] = true
+			gps = received
+		}
+
 		readings = append(readings, Reading{
 			IMEI:       d.IMEI,
 			GPSTime:    gps,
