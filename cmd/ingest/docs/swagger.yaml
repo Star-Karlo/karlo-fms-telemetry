@@ -73,6 +73,61 @@ definitions:
         example: 0
         type: number
     type: object
+  ingest.GeofenceCheck:
+    properties:
+      center_lat:
+        description: warehouse center latitude
+        example: -6.2
+        type: number
+      center_lon:
+        description: warehouse center longitude
+        example: 106.8
+        type: number
+      imei:
+        description: device to test (its latest live position)
+        example: "350612071419004"
+        type: string
+      radius_m:
+        description: optional; if set, `inside` = distance_m <= radius_m
+        example: 8000
+        type: number
+    type: object
+  ingest.GeofenceRequest:
+    properties:
+      checks:
+        items:
+          $ref: '#/definitions/ingest.GeofenceCheck'
+        type: array
+    type: object
+  ingest.GeofenceResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/ingest.GeofenceResult'
+        type: array
+    type: object
+  ingest.GeofenceResult:
+    properties:
+      distance_m:
+        description: metres from the point to the center
+        type: number
+      found:
+        description: false if the truck has no live position
+        type: boolean
+      imei:
+        type: string
+      inside:
+        description: present only when radius_m was given
+        type: boolean
+      lat:
+        description: the position used
+        type: number
+      lon:
+        type: number
+      time:
+        description: fix time of that position
+        type: string
+    type: object
   ingest.HistoryPage:
     properties:
       next_cursor:
@@ -163,6 +218,83 @@ paths:
       summary: Reverse geocode a coordinate to kecamatan / kota / provinsi
       tags:
       - geocode
+  /v1/geofence/check:
+    get:
+      description: Distance of one truck (imei) or an arbitrary point (lat/lon) to
+        a center. Returns the same fields as one batch result.
+      parameters:
+      - description: Center latitude
+        in: query
+        name: center_lat
+        required: true
+        type: number
+      - description: Center longitude
+        in: query
+        name: center_lon
+        required: true
+        type: number
+      - description: Optional radius; sets `inside`
+        in: query
+        name: radius_m
+        type: number
+      - description: Test this truck's latest position (or use lat+lon)
+        in: query
+        name: imei
+        type: string
+      - description: Test an arbitrary point (with lon)
+        in: query
+        name: lat
+        type: number
+      - description: Test an arbitrary point (with lat)
+        in: query
+        name: lon
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ingest.GeofenceResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Single radius check (convenience/testing)
+      tags:
+      - geofence
+    post:
+      consumes:
+      - application/json
+      description: For each {imei, center, radius}, returns the truck's current distance
+        to the center (and `inside` if radius given). One request, one indexed lookup.
+        The caller (platform) applies its own distance bands (arrive/out/enter) on
+        distance_m. Trucks with no live position return found:false.
+      parameters:
+      - description: Batch of checks (max 5000)
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/ingest.GeofenceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ingest.GeofenceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 'Batch radius check: are these trucks within their circles?'
+      tags:
+      - geofence
   /v1/history/{imei}:
     get:
       parameters:

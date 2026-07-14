@@ -33,6 +33,9 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/v1/live", h.handleLiveAll)
 	r.Get("/v1/live/{imei}", h.handleLiveOne)
 	r.Get("/v1/history/{imei}", h.handleHistory)
+	// geofence (radius check)
+	r.Post("/v1/geofence/check", h.handleGeofenceCheckBatch)
+	r.Get("/v1/geofence/check", h.handleGeofenceCheckOne)
 }
 
 // IngestResult is the response for a successful ingest.

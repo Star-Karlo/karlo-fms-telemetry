@@ -447,6 +447,34 @@ func (rd *Reader) LiveAllProjected(ctx context.Context, proj projection) ([]map[
 	return scanProjected(rows)
 }
 
+// GeoPos is a minimal live position (for geofence distance checks).
+type GeoPos struct {
+	Lat, Lon float64
+	Time     time.Time
+}
+
+// LivePositions returns the latest lat/lon (+fix time) for the given imeis —
+// only those with a live row. Lean (no metadata/geocode) for large batches.
+func (rd *Reader) LivePositions(ctx context.Context, imeis []string) (map[string]GeoPos, error) {
+	rows, err := rd.pool.Query(ctx,
+		`SELECT imei, ST_Y(geom::geometry), ST_X(geom::geometry), time
+		 FROM latest WHERE imei = ANY($1) AND geom IS NOT NULL`, imeis)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]GeoPos, len(imeis))
+	for rows.Next() {
+		var imei string
+		var p GeoPos
+		if err := rows.Scan(&imei, &p.Lat, &p.Lon, &p.Time); err != nil {
+			return nil, err
+		}
+		out[imei] = p
+	}
+	return out, rows.Err()
+}
+
 // LiveMany returns the latest position of a specific set of devices (full fields).
 func (rd *Reader) LiveMany(ctx context.Context, imeis []string) ([]Position, error) {
 	rows, err := rd.pool.Query(ctx, `SELECT `+posCols+` FROM latest WHERE imei = ANY($1) ORDER BY imei`, imeis)

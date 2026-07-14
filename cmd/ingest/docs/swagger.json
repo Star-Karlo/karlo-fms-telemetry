@@ -54,6 +54,116 @@
                 }
             }
         },
+        "/v1/geofence/check": {
+            "get": {
+                "description": "Distance of one truck (imei) or an arbitrary point (lat/lon) to a center. Returns the same fields as one batch result.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geofence"
+                ],
+                "summary": "Single radius check (convenience/testing)",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "description": "Center latitude",
+                        "name": "center_lat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Center longitude",
+                        "name": "center_lon",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Optional radius; sets `inside`",
+                        "name": "radius_m",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Test this truck's latest position (or use lat+lon)",
+                        "name": "imei",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Test an arbitrary point (with lon)",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Test an arbitrary point (with lat)",
+                        "name": "lon",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ingest.GeofenceResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "For each {imei, center, radius}, returns the truck's current distance to the center (and `inside` if radius given). One request, one indexed lookup. The caller (platform) applies its own distance bands (arrive/out/enter) on distance_m. Trucks with no live position return found:false.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geofence"
+                ],
+                "summary": "Batch radius check: are these trucks within their circles?",
+                "parameters": [
+                    {
+                        "description": "Batch of checks (max 5000)",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ingest.GeofenceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ingest.GeofenceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/history/{imei}": {
             "get": {
                 "produces": [
@@ -364,6 +474,84 @@
                     "description": "speed -\u003e speed column",
                     "type": "number",
                     "example": 0
+                }
+            }
+        },
+        "ingest.GeofenceCheck": {
+            "type": "object",
+            "properties": {
+                "center_lat": {
+                    "description": "warehouse center latitude",
+                    "type": "number",
+                    "example": -6.2
+                },
+                "center_lon": {
+                    "description": "warehouse center longitude",
+                    "type": "number",
+                    "example": 106.8
+                },
+                "imei": {
+                    "description": "device to test (its latest live position)",
+                    "type": "string",
+                    "example": "350612071419004"
+                },
+                "radius_m": {
+                    "description": "optional; if set, `inside` = distance_m \u003c= radius_m",
+                    "type": "number",
+                    "example": 8000
+                }
+            }
+        },
+        "ingest.GeofenceRequest": {
+            "type": "object",
+            "properties": {
+                "checks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ingest.GeofenceCheck"
+                    }
+                }
+            }
+        },
+        "ingest.GeofenceResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ingest.GeofenceResult"
+                    }
+                }
+            }
+        },
+        "ingest.GeofenceResult": {
+            "type": "object",
+            "properties": {
+                "distance_m": {
+                    "description": "metres from the point to the center",
+                    "type": "number"
+                },
+                "found": {
+                    "description": "false if the truck has no live position",
+                    "type": "boolean"
+                },
+                "imei": {
+                    "type": "string"
+                },
+                "inside": {
+                    "description": "present only when radius_m was given",
+                    "type": "boolean"
+                },
+                "lat": {
+                    "description": "the position used",
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "time": {
+                    "description": "fix time of that position",
+                    "type": "string"
                 }
             }
         },
