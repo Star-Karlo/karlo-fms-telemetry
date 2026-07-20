@@ -95,6 +95,14 @@ func main() {
 	cov.Route(r)
 	go cov.RunRollup(ctx, retentionDays)
 
+	// Per-device daily time-in-state + distance. Same shape as coverage: roll
+	// the hot window up in the background, serve the small result. Computing it
+	// per request is not an option — the aggregate over raw telemetry is ~15s
+	// for a single day.
+	vd := ingest.NewVehicleDay(pool)
+	vd.Route(r)
+	go vd.RunRollup(ctx, retentionDays)
+
 	log.Printf("ingest service on %s  (swagger: http://localhost%s/swagger/index.html)", addr, addr)
 	log.Fatal(http.ListenAndServe(addr, r))
 }
