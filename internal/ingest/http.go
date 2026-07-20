@@ -1,6 +1,8 @@
 package ingest
 
 import (
+	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -19,11 +21,35 @@ type Handler struct {
 	geo    *geocode.Service
 	w      *Writer
 	r      *Reader
-	apiKey string // if set, POST /v1/ingest requires this in the X-Ingest-Key header
+	apiKey string    // legacy shared secret; still accepted when set
+	keys   *KeyStore // revocable per-sender keys (ingest_key table)
 }
 
-func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, apiKey string) *Handler {
-	return &Handler{geo: geo, w: w, r: reader, apiKey: apiKey}
+func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, apiKey string, keys *KeyStore) *Handler {
+	return &Handler{geo: geo, w: w, r: reader, apiKey: apiKey, keys: keys}
+}
+
+// authorized reports whether the request may write telemetry. A request passes
+// with either the legacy shared secret or any active ingest_key row, so issuing
+// and revoking individual keys never disturbs existing senders.
+//
+// With neither configured the endpoint stays open, preserving the historical
+// behaviour for local/dev runs (cmd/ingest logs a warning in that state).
+func (h *Handler) authorized(ctx context.Context, presented string) bool {
+	if h.apiKey == "" && h.keys == nil {
+		return true
+	}
+	if presented == "" {
+		return false
+	}
+	// Constant-time: the shared secret is compared byte-for-byte on every call.
+	if h.apiKey != "" && subtle.ConstantTimeCompare([]byte(presented), []byte(h.apiKey)) == 1 {
+		return true
+	}
+	if h.keys != nil {
+		return h.keys.Valid(ctx, presented)
+	}
+	return false
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -57,8 +83,8 @@ type IngestResult struct {
 //	@Failure		401		{object}	map[string]string
 //	@Router			/v1/ingest [post]
 func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
-	// API-key gate: enforced only when the service is configured with a key.
-	if h.apiKey != "" && r.Header.Get("X-Ingest-Key") != h.apiKey {
+	// API-key gate: accepts the shared secret or any active ingest_key.
+	if !h.authorized(r.Context(), r.Header.Get("X-Ingest-Key")) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or missing X-Ingest-Key"})
 		return
 	}

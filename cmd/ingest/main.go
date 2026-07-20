@@ -62,13 +62,23 @@ func main() {
 
 	// Reverse-geocode in-process (shares the geocode PostGIS lookup + Redis cache).
 	geoSvc := geocode.NewService(geocode.NewStore(pool), geocode.NewCache(rdb), precision, ttl)
+	// Auth accepts the legacy shared secret and/or revocable keys from the
+	// ingest_key table. Keys are enabled unless explicitly turned off, so a new
+	// key issued with cmd/ingestkey works without redeploying.
 	apiKey := env("INGEST_API_KEY", "")
-	if apiKey == "" {
-		log.Printf("WARNING: INGEST_API_KEY not set — /v1/ingest is OPEN (no auth)")
-	} else {
-		log.Printf("ingest auth enabled (X-Ingest-Key required)")
+	var keys *ingest.KeyStore
+	if env("INGEST_KEYS_ENABLED", "1") != "0" {
+		keys = ingest.NewKeyStore(pool)
 	}
-	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), apiKey)
+	switch {
+	case apiKey == "" && keys == nil:
+		log.Printf("WARNING: no INGEST_API_KEY and ingest_key table disabled — /v1/ingest is OPEN (no auth)")
+	case apiKey == "":
+		log.Printf("ingest auth enabled (X-Ingest-Key: ingest_key table only)")
+	default:
+		log.Printf("ingest auth enabled (X-Ingest-Key: shared secret + ingest_key table)")
+	}
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), apiKey, keys)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -78,6 +88,12 @@ func main() {
 	})
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 	h.Routes(r)
+
+	// Coverage/terrain spatial grid: nightly rollup of signal + ruggedness, plus
+	// the read endpoint. Seeds the hot window on startup, then rolls up daily.
+	cov := ingest.NewCoverage(pool)
+	cov.Route(r)
+	go cov.RunRollup(ctx, retentionDays)
 
 	log.Printf("ingest service on %s  (swagger: http://localhost%s/swagger/index.html)", addr, addr)
 	log.Fatal(http.ListenAndServe(addr, r))
