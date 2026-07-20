@@ -1,33 +1,5 @@
 basePath: /
 definitions:
-  geocode.Result:
-    properties:
-      Kota:
-        description: city (empty if the ADM2 is a regency)
-        type: string
-      cached:
-        description: true if served from the Redis cache
-        type: boolean
-      found:
-        type: boolean
-      jalan:
-        description: nearest OSM street (empty if none within range)
-        type: string
-      kabupaten:
-        description: regency (empty if the ADM2 is a city)
-        type: string
-      kecamatan:
-        type: string
-      kelurahan:
-        description: village (empty until ADM4 data is loaded)
-        type: string
-      lat:
-        type: number
-      lon:
-        type: number
-      provinsi:
-        type: string
-    type: object
   ingest.GenericReading:
     properties:
       altitude:
@@ -187,37 +159,42 @@ info:
   title: Karlo FMS Ingest Service
   version: "0.1"
 paths:
-  /reverse:
+  /v1/coverage:
     get:
+      description: ~1.2km grid cells. metric=signal returns avg GSM signal (0-5) +
+        dead-zone ratio (provider is a comma-separated subset, combined); metric=terrain
+        returns ruggedness (metres of elevation change per km driven); metric=altitude
+        returns mean elevation in metres. Optional bbox=minLon,minLat,maxLon,maxLat.
       parameters:
-      - description: Latitude
-        example: -6.1751
+      - description: signal | terrain | altitude | lte (default signal)
         in: query
-        name: lat
-        required: true
-        type: number
-      - description: Longitude
-        example: 106.8272
+        name: metric
+        type: string
+      - description: 'comma-separated: telkomsel,indosat,xl — omit for every operator
+          incl. unreported (signal only)'
         in: query
-        name: lon
-        required: true
-        type: number
+        name: provider
+        type: string
+      - description: 'comma-separated: 2g,4g — omit for both device generations (signal
+          only)'
+        in: query
+        name: gen
+        type: string
+      - description: minLon,minLat,maxLon,maxLat
+        in: query
+        name: bbox
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/geocode.Result'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties:
-              type: string
+            additionalProperties: true
             type: object
-      summary: Reverse geocode a coordinate to kecamatan / kota / provinsi
+      summary: Signal / terrain / altitude coverage grid (GeoJSON)
       tags:
-      - geocode
+      - coverage
   /v1/geofence/check:
     get:
       description: Distance of one truck (imei) or an arbitrary point (lat/lon) to

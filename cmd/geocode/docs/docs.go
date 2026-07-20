@@ -66,6 +66,10 @@ const docTemplate = `{
         "geocode.Result": {
             "type": "object",
             "properties": {
+                "Kota": {
+                    "description": "city (empty if the ADM2 is a regency)",
+                    "type": "string"
+                },
                 "cached": {
                     "description": "true if served from the Redis cache",
                     "type": "boolean"
@@ -73,15 +77,19 @@ const docTemplate = `{
                 "found": {
                     "type": "boolean"
                 },
+                "jalan": {
+                    "description": "nearest OSM street (empty if none within range)",
+                    "type": "string"
+                },
                 "kabupaten": {
-                    "description": "kota/kabupaten = the \"city\" level",
+                    "description": "regency (empty if the ADM2 is a city)",
                     "type": "string"
                 },
                 "kecamatan": {
                     "type": "string"
                 },
-                "kecamatan_code": {
-                    "description": "BPS P-code",
+                "kelurahan": {
+                    "description": "village (empty until ADM4 data is loaded)",
                     "type": "string"
                 },
                 "lat": {

@@ -15,47 +15,48 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/reverse": {
+        "/v1/coverage": {
             "get": {
+                "description": "~1.2km grid cells. metric=signal returns avg GSM signal (0-5) + dead-zone ratio (provider is a comma-separated subset, combined); metric=terrain returns ruggedness (metres of elevation change per km driven); metric=altitude returns mean elevation in metres. Optional bbox=minLon,minLat,maxLon,maxLat.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "geocode"
+                    "coverage"
                 ],
-                "summary": "Reverse geocode a coordinate to kecamatan / kota / provinsi",
+                "summary": "Signal / terrain / altitude coverage grid (GeoJSON)",
                 "parameters": [
                     {
-                        "type": "number",
-                        "example": -6.1751,
-                        "description": "Latitude",
-                        "name": "lat",
-                        "in": "query",
-                        "required": true
+                        "type": "string",
+                        "description": "signal | terrain | altitude | lte (default signal)",
+                        "name": "metric",
+                        "in": "query"
                     },
                     {
-                        "type": "number",
-                        "example": 106.8272,
-                        "description": "Longitude",
-                        "name": "lon",
-                        "in": "query",
-                        "required": true
+                        "type": "string",
+                        "description": "comma-separated: telkomsel,indosat,xl — omit for every operator incl. unreported (signal only)",
+                        "name": "provider",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "comma-separated: 2g,4g — omit for both device generations (signal only)",
+                        "name": "gen",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "minLon,minLat,maxLon,maxLat",
+                        "name": "bbox",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/geocode.Result"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
                             "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -387,46 +388,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "geocode.Result": {
-            "type": "object",
-            "properties": {
-                "Kota": {
-                    "description": "city (empty if the ADM2 is a regency)",
-                    "type": "string"
-                },
-                "cached": {
-                    "description": "true if served from the Redis cache",
-                    "type": "boolean"
-                },
-                "found": {
-                    "type": "boolean"
-                },
-                "jalan": {
-                    "description": "nearest OSM street (empty if none within range)",
-                    "type": "string"
-                },
-                "kabupaten": {
-                    "description": "regency (empty if the ADM2 is a city)",
-                    "type": "string"
-                },
-                "kecamatan": {
-                    "type": "string"
-                },
-                "kelurahan": {
-                    "description": "village (empty until ADM4 data is loaded)",
-                    "type": "string"
-                },
-                "lat": {
-                    "type": "number"
-                },
-                "lon": {
-                    "type": "number"
-                },
-                "provinsi": {
-                    "type": "string"
-                }
-            }
-        },
         "ingest.GenericReading": {
             "type": "object",
             "properties": {
