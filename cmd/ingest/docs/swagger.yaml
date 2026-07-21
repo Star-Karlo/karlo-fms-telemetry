@@ -1,5 +1,33 @@
 basePath: /
 definitions:
+  geocode.Result:
+    properties:
+      Kota:
+        description: city (empty if the ADM2 is a regency)
+        type: string
+      cached:
+        description: true if served from the Redis cache
+        type: boolean
+      found:
+        type: boolean
+      jalan:
+        description: nearest OSM street (empty if none within range)
+        type: string
+      kabupaten:
+        description: regency (empty if the ADM2 is a city)
+        type: string
+      kecamatan:
+        type: string
+      kelurahan:
+        description: village (empty until ADM4 data is loaded)
+        type: string
+      lat:
+        type: number
+      lon:
+        type: number
+      provinsi:
+        type: string
+    type: object
   ingest.GenericReading:
     properties:
       altitude:
@@ -116,6 +144,95 @@ definitions:
         example: 1
         type: integer
     type: object
+  ingest.MobileHistoryPage:
+    properties:
+      next_cursor:
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/ingest.MobilePosition'
+        type: array
+    type: object
+  ingest.MobilePosition:
+    properties:
+      bearing:
+        type: number
+      driver:
+        type: string
+      jalan:
+        type: string
+      kabupaten:
+        type: string
+      kecamatan:
+        type: string
+      kelurahan:
+        type: string
+      kota:
+        type: string
+      lat:
+        type: number
+      lon:
+        type: number
+      metadata:
+        type: object
+      provinsi:
+        type: string
+      received_at:
+        type: string
+      speed:
+        type: number
+      time:
+        type: string
+    type: object
+  ingest.MobileReading:
+    properties:
+      altitude:
+        description: -> metadata
+        example: 65
+        type: number
+      batteryLevel:
+        description: 'Phone-specific conveniences: accepted top-level OR inside io;
+          both land in metadata.'
+        example: 41
+        type: number
+      bearing:
+        description: -> bearing column
+        example: 0
+        type: number
+      driver:
+        description: driver id (required; identity)
+        example: 649019ee6c7c280f4e46d0a2
+        type: string
+      fakeGps:
+        type: boolean
+      gpsCreatedAt:
+        example: "2026-07-21T09:00:00Z"
+        type: string
+      gpsOn:
+        type: boolean
+      io:
+        additionalProperties:
+          type: string
+        description: full app blob -> metadata
+        type: object
+      isOverride:
+        type: boolean
+      latitude:
+        description: -> geom
+        example: -6.9786741
+        type: number
+      longitude:
+        description: -> geom
+        example: 110.3701788
+        type: number
+      speed:
+        description: -> speed column
+        example: 0
+        type: number
+      status:
+        example: Idle
+        type: string
+    type: object
   ingest.Position:
     properties:
       bearing:
@@ -151,6 +268,30 @@ definitions:
         description: gpsCreatedAt
         type: string
     type: object
+  ingest.VehicleDay:
+    properties:
+      day:
+        description: YYYY-MM-DD, Asia/Jakarta
+        type: string
+      distance_km:
+        type: number
+      first_seen:
+        type: string
+      idle_s:
+        type: integer
+      imei:
+        type: string
+      last_seen:
+        type: string
+      max_speed:
+        type: number
+      moving_s:
+        type: integer
+      parking_s:
+        type: integer
+      samples:
+        type: integer
+    type: object
 info:
   contact: {}
   description: Multi-vendor device telemetry intake. Devices POST readings; each is
@@ -159,6 +300,37 @@ info:
   title: Karlo FMS Ingest Service
   version: "0.1"
 paths:
+  /reverse:
+    get:
+      parameters:
+      - description: Latitude
+        example: -6.1751
+        in: query
+        name: lat
+        required: true
+        type: number
+      - description: Longitude
+        example: 106.8272
+        in: query
+        name: lon
+        required: true
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/geocode.Result'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Reverse geocode a coordinate to kecamatan / kota / provinsi
+      tags:
+      - geocode
   /v1/coverage:
     get:
       description: ~1.2km grid cells. metric=signal returns avg GSM signal (0-5) +
@@ -365,6 +537,49 @@ paths:
       summary: Ingest device telemetry (single reading or batch array)
       tags:
       - ingest
+  /v1/ingest/mobile:
+    post:
+      consumes:
+      - application/json
+      description: Same canonical shape as /v1/ingest but keyed by `driver` instead
+        of `imei` (a phone has no IMEI). Each reading is reverse-geocoded to kecamatan/kelurahan/kota/provinsi/jalan
+        and stored to the mobile_telemetry hypertable. received_at is stamped by the
+        server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in
+        `io` and are kept in metadata.
+      parameters:
+      - description: Shared ingest API key (required when the service is configured
+          with one)
+        in: header
+        name: X-Ingest-Key
+        type: string
+      - description: A reading (or a JSON array of readings)
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/ingest.MobileReading'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/ingest.IngestResult'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Ingest mobile-app telemetry (single reading or batch array)
+      tags:
+      - ingest
   /v1/live:
     get:
       description: 'Returns the latest fix per device. Use ?imeis= to restrict to
@@ -421,4 +636,124 @@ paths:
       summary: Latest position of one device
       tags:
       - read
+  /v1/mobile/history/{driver}:
+    get:
+      parameters:
+      - description: Driver id
+        in: path
+        name: driver
+        required: true
+        type: string
+      - description: Start time (RFC3339); default now-24h
+        in: query
+        name: from
+        type: string
+      - description: End time (RFC3339); default now
+        in: query
+        name: to
+        type: string
+      - description: Page size (default 1000, max 10000)
+        in: query
+        name: limit
+        type: integer
+      - description: Pass the previous response's next_cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Downsample the range to ~N shape-preserving points (LTTB); bypasses
+          pagination
+        in: query
+        name: max_points
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ingest.MobileHistoryPage'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Historical track for a mobile driver over a time range
+      tags:
+      - read
+  /v1/mobile/live:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ingest.MobilePosition'
+            type: array
+      summary: Latest position of every mobile driver
+      tags:
+      - read
+  /v1/mobile/live/{driver}:
+    get:
+      parameters:
+      - description: Driver id
+        in: path
+        name: driver
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ingest.MobilePosition'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Latest position of one mobile driver
+      tags:
+      - read
+  /v1/stats/daily:
+    get:
+      description: 'Pre-aggregated daily rollup: seconds moving/idle/parked, distance,
+        max speed. Days are Asia/Jakarta.'
+      parameters:
+      - description: start day, YYYY-MM-DD (inclusive)
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: end day, YYYY-MM-DD (inclusive)
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: comma-separated IMEIs; omit for all
+        in: query
+        name: imeis
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ingest.VehicleDay'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Daily per-device time-in-state and distance
+      tags:
+      - stats
 swagger: "2.0"

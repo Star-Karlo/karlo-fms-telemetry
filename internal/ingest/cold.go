@@ -25,6 +25,7 @@ type ColdReader struct {
 	database string
 	table    string
 	output   string // s3://.../ location for query results
+	keyCol   string // identity column: "imei" for GPS, "driver" for mobile
 }
 
 func NewColdReader(ctx context.Context, database, table, output string) (*ColdReader, error) {
@@ -32,30 +33,22 @@ func NewColdReader(ctx context.Context, database, table, output string) (*ColdRe
 	if err != nil {
 		return nil, err
 	}
-	return &ColdReader{client: athena.NewFromConfig(cfg), database: database, table: table, output: output}, nil
+	return &ColdReader{client: athena.NewFromConfig(cfg), database: database, table: table, output: output, keyCol: "imei"}, nil
 }
 
-// History returns cold points for imei in the time window, ascending, up to
-// limit rows. lowerStrict makes the lower bound exclusive (cursor paging);
-// upperExclusive makes the upper bound exclusive (used at the hot/cold boundary).
-func (c *ColdReader) History(ctx context.Context, imei string, lower, upper time.Time, lowerStrict, upperExclusive bool, limit int) ([]Position, error) {
-	loOp, hiOp := ">=", "<="
-	if lowerStrict {
-		loOp = ">"
+// NewColdReaderFor is NewColdReader with an explicit identity column, so the
+// same reader serves the mobile cold table (keyed by driver, own S3 folder).
+func NewColdReaderFor(ctx context.Context, database, table, output, keyCol string) (*ColdReader, error) {
+	c, err := NewColdReader(ctx, database, table, output)
+	if err != nil {
+		return nil, err
 	}
-	if upperExclusive {
-		hiOp = "<"
-	}
-	q := fmt.Sprintf(`SELECT time_ms, received_ms, lat, lon, speed, bearing, ignition,
-       kecamatan, kelurahan, kabupaten, kota, provinsi, jalan, metadata
-FROM %s.%s
-WHERE imei = '%s' AND date BETWEEN '%s' AND '%s'
-  AND time_ms %s %d AND time_ms %s %d
-ORDER BY time_ms LIMIT %d`,
-		c.database, c.table, imei,
-		lower.UTC().Format("2006-01-02"), upper.UTC().Format("2006-01-02"),
-		loOp, lower.UnixMilli(), hiOp, upper.UnixMilli(), limit)
+	c.keyCol = keyCol
+	return c, nil
+}
 
+// run starts a query, polls to completion and returns its execution id.
+func (c *ColdReader) run(ctx context.Context, q string) (*string, error) {
 	start, err := c.client.StartQueryExecution(ctx, &athena.StartQueryExecutionInput{
 		QueryString:           &q,
 		QueryExecutionContext: &atypes.QueryExecutionContext{Database: &c.database},
@@ -65,15 +58,14 @@ ORDER BY time_ms LIMIT %d`,
 		return nil, fmt.Errorf("athena start: %w", err)
 	}
 	qid := start.QueryExecutionId
-
-	for { // poll to completion
+	for {
 		ex, err := c.client.GetQueryExecution(ctx, &athena.GetQueryExecutionInput{QueryExecutionId: qid})
 		if err != nil {
 			return nil, err
 		}
 		switch ex.QueryExecution.Status.State {
 		case atypes.QueryExecutionStateSucceeded:
-			return c.collect(ctx, qid, imei)
+			return qid, nil
 		case atypes.QueryExecutionStateFailed, atypes.QueryExecutionStateCancelled:
 			reason := ""
 			if r := ex.QueryExecution.Status.StateChangeReason; r != nil {
@@ -87,6 +79,115 @@ ORDER BY time_ms LIMIT %d`,
 		case <-time.After(400 * time.Millisecond):
 		}
 	}
+}
+
+// timeBounds renders the shared WHERE fragment for a cold time window.
+func timeBounds(lower, upper time.Time, lowerStrict, upperExclusive bool) (loOp, hiOp, loDate, hiDate string) {
+	loOp, hiOp = ">=", "<="
+	if lowerStrict {
+		loOp = ">"
+	}
+	if upperExclusive {
+		hiOp = "<"
+	}
+	return loOp, hiOp, lower.UTC().Format("2006-01-02"), upper.UTC().Format("2006-01-02")
+}
+
+// History returns cold points for imei in the time window, ascending, up to
+// limit rows. lowerStrict makes the lower bound exclusive (cursor paging);
+// upperExclusive makes the upper bound exclusive (used at the hot/cold boundary).
+func (c *ColdReader) History(ctx context.Context, imei string, lower, upper time.Time, lowerStrict, upperExclusive bool, limit int) ([]Position, error) {
+	loOp, hiOp, loDate, hiDate := timeBounds(lower, upper, lowerStrict, upperExclusive)
+	q := fmt.Sprintf(`SELECT time_ms, received_ms, lat, lon, speed, bearing, ignition,
+       kecamatan, kelurahan, kabupaten, kota, provinsi, jalan, metadata
+FROM %s.%s
+WHERE %s = '%s' AND date BETWEEN '%s' AND '%s'
+  AND time_ms %s %d AND time_ms %s %d
+ORDER BY time_ms LIMIT %d`,
+		c.database, c.table, c.keyCol, imei, loDate, hiDate,
+		loOp, lower.UnixMilli(), hiOp, upper.UnixMilli(), limit)
+
+	qid, err := c.run(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return c.collect(ctx, qid, imei)
+}
+
+// HistoryMobile is History for the driver-keyed mobile cold table: same flow and
+// same Parquet layout, minus `ignition` (phones have none) and returning
+// MobilePosition.
+func (c *ColdReader) HistoryMobile(ctx context.Context, driver string, lower, upper time.Time, lowerStrict, upperExclusive bool, limit int) ([]MobilePosition, error) {
+	loOp, hiOp, loDate, hiDate := timeBounds(lower, upper, lowerStrict, upperExclusive)
+	q := fmt.Sprintf(`SELECT time_ms, received_ms, lat, lon, speed, bearing,
+       kecamatan, kelurahan, kabupaten, kota, provinsi, jalan, metadata
+FROM %s.%s
+WHERE %s = '%s' AND date BETWEEN '%s' AND '%s'
+  AND time_ms %s %d AND time_ms %s %d
+ORDER BY time_ms LIMIT %d`,
+		c.database, c.table, c.keyCol, driver, loDate, hiDate,
+		loOp, lower.UnixMilli(), hiOp, upper.UnixMilli(), limit)
+
+	qid, err := c.run(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []MobilePosition
+	var token *string
+	first := true
+	for {
+		res, err := c.client.GetQueryResults(ctx, &athena.GetQueryResultsInput{QueryExecutionId: qid, NextToken: token})
+		if err != nil {
+			return nil, err
+		}
+		for i, row := range res.ResultSet.Rows {
+			if first && i == 0 {
+				continue // header row
+			}
+			out = append(out, mobileColdRow(driver, row.Data))
+		}
+		first = false
+		if token = res.NextToken; token == nil {
+			break
+		}
+	}
+	return out, nil
+}
+
+// mobileColdRow maps an Athena result row to a MobilePosition. Column order
+// matches the SELECT in HistoryMobile.
+func mobileColdRow(driver string, d []atypes.Datum) MobilePosition {
+	get := func(i int) *string {
+		if i < len(d) {
+			return d[i].VarCharValue
+		}
+		return nil
+	}
+	p := MobilePosition{Driver: driver}
+	if v := get(0); v != nil {
+		if ms, err := strconv.ParseInt(*v, 10, 64); err == nil {
+			p.Time = time.UnixMilli(ms).UTC()
+		}
+	}
+	if v := get(1); v != nil {
+		if ms, err := strconv.ParseInt(*v, 10, 64); err == nil {
+			t := time.UnixMilli(ms).UTC()
+			p.ReceivedAt = &t
+		}
+	}
+	p.Lat = floatPtr(get(2))
+	p.Lon = floatPtr(get(3))
+	p.Speed = floatPtr(get(4))
+	p.Bearing = floatPtr(get(5))
+	p.Kecamatan = str(get(6))
+	p.Kelurahan = str(get(7))
+	p.Kabupaten = str(get(8))
+	p.Kota = str(get(9))
+	p.Provinsi = str(get(10))
+	p.Jalan = str(get(11))
+	p.Metadata = stripRaw(get(12))
+	return p
 }
 
 func (c *ColdReader) collect(ctx context.Context, qid *string, imei string) ([]Position, error) {

@@ -64,6 +64,23 @@ func main() {
 		log.Fatalf("s3 upload: %v", err)
 	}
 	log.Printf("uploaded -> s3://%s/%s  (GLACIER_IR)", bucket, key)
+
+	// Mobile (driver-keyed) telemetry: same day, same bucket, its own folder so
+	// it maps to a distinct Athena table. A failure here must not fail the
+	// telemetry archive that already succeeded above.
+	mPath, mn, err := archive.ExportMobileDay(ctx, pool, baseDir, day)
+	if err != nil {
+		log.Printf("WARN mobile export %s: %v", day.Format("2006-01-02"), err)
+		return
+	}
+	log.Printf("archived %d mobile rows for %s -> %s", mn, day.Format("2006-01-02"), mPath)
+
+	mKey := fmt.Sprintf("mobile/date=%s/part.parquet", day.Format("2006-01-02"))
+	if err := archive.UploadFile(ctx, bucket, mKey, mPath, types.StorageClassGlacierIr); err != nil {
+		log.Printf("WARN mobile s3 upload: %v", err)
+		return
+	}
+	log.Printf("uploaded -> s3://%s/%s  (GLACIER_IR)", bucket, mKey)
 }
 
 func env(k, def string) string {

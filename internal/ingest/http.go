@@ -21,12 +21,13 @@ type Handler struct {
 	geo    *geocode.Service
 	w      *Writer
 	r      *Reader
-	apiKey string    // legacy shared secret; still accepted when set
-	keys   *KeyStore // revocable per-sender keys (ingest_key table)
+	mob    *MobileStore // driver-keyed telemetry (phone app); see mobile.go
+	apiKey string       // legacy shared secret; still accepted when set
+	keys   *KeyStore    // revocable per-sender keys (ingest_key table)
 }
 
-func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, apiKey string, keys *KeyStore) *Handler {
-	return &Handler{geo: geo, w: w, r: reader, apiKey: apiKey, keys: keys}
+func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, mob *MobileStore, apiKey string, keys *KeyStore) *Handler {
+	return &Handler{geo: geo, w: w, r: reader, mob: mob, apiKey: apiKey, keys: keys}
 }
 
 // authorized reports whether the request may write telemetry. A request passes
@@ -62,6 +63,11 @@ func (h *Handler) Routes(r chi.Router) {
 	// geofence (radius check)
 	r.Post("/v1/geofence/check", h.handleGeofenceCheckBatch)
 	r.Get("/v1/geofence/check", h.handleGeofenceCheckOne)
+	// mobile (driver-keyed telemetry from the phone app)
+	r.Post("/v1/ingest/mobile", h.handleMobileIngest)
+	r.Get("/v1/mobile/live", h.handleMobileLiveAll)
+	r.Get("/v1/mobile/live/{driver}", h.handleMobileLiveOne)
+	r.Get("/v1/mobile/history/{driver}", h.handleMobileHistory)
 }
 
 // IngestResult is the response for a successful ingest.

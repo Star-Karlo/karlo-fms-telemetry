@@ -78,7 +78,19 @@ func main() {
 	default:
 		log.Printf("ingest auth enabled (X-Ingest-Key: shared secret + ingest_key table)")
 	}
-	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), apiKey, keys)
+	// Mobile (driver-keyed) telemetry from the phone app. Its own tables and its
+	// own cold table, so the IMEI identity space and the tracker analytics stay clean.
+	var mobileCold *ingest.ColdReader
+	if out := env("ATHENA_OUTPUT", ""); out != "" {
+		mobileCold, err = ingest.NewColdReaderFor(ctx, env("ATHENA_DATABASE", "fms"),
+			env("ATHENA_MOBILE_TABLE", "mobile_cold"), out, "driver")
+		if err != nil {
+			log.Fatalf("athena (mobile) init: %v", err)
+		}
+	}
+	mob := ingest.NewMobileStore(pool, mobileCold, retentionDays)
+
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), mob, apiKey, keys)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)

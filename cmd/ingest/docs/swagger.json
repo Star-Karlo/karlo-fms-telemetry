@@ -8,6 +8,52 @@
     },
     "basePath": "/",
     "paths": {
+        "/reverse": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geocode"
+                ],
+                "summary": "Reverse geocode a coordinate to kecamatan / kota / provinsi",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "example": -6.1751,
+                        "description": "Latitude",
+                        "name": "lat",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "example": 106.8272,
+                        "description": "Longitude",
+                        "name": "lon",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/geocode.Result"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/coverage": {
             "get": {
                 "description": "~1.2km grid cells. metric=signal returns avg GSM signal (0-5) + dead-zone ratio (provider is a comma-separated subset, combined); metric=terrain returns ruggedness (metres of elevation change per km driven); metric=altitude returns mean elevation in metres. Optional bbox=minLon,minLat,maxLon,maxLat.",
@@ -296,6 +342,64 @@
                 }
             }
         },
+        "/v1/ingest/mobile": {
+            "post": {
+                "description": "Same canonical shape as /v1/ingest but keyed by `driver` instead of `imei` (a phone has no IMEI). Each reading is reverse-geocoded to kecamatan/kelurahan/kota/provinsi/jalan and stored to the mobile_telemetry hypertable. received_at is stamped by the server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in `io` and are kept in metadata.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ingest"
+                ],
+                "summary": "Ingest mobile-app telemetry (single reading or batch array)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Shared ingest API key (required when the service is configured with one)",
+                        "name": "X-Ingest-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "A reading (or a JSON array of readings)",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ingest.MobileReading"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/ingest.IngestResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/live": {
             "get": {
                 "description": "Returns the latest fix per device. Use ?imeis= to restrict to a set, and ?fields= to trim columns (e.g. a lightweight map feed: ?fields=lat,lon).",
@@ -378,9 +482,229 @@
                     }
                 }
             }
+        },
+        "/v1/mobile/history/{driver}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "read"
+                ],
+                "summary": "Historical track for a mobile driver over a time range",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Driver id",
+                        "name": "driver",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time (RFC3339); default now-24h",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time (RFC3339); default now",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 1000, max 10000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pass the previous response's next_cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Downsample the range to ~N shape-preserving points (LTTB); bypasses pagination",
+                        "name": "max_points",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ingest.MobileHistoryPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/mobile/live": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "read"
+                ],
+                "summary": "Latest position of every mobile driver",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ingest.MobilePosition"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/mobile/live/{driver}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "read"
+                ],
+                "summary": "Latest position of one mobile driver",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Driver id",
+                        "name": "driver",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ingest.MobilePosition"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/stats/daily": {
+            "get": {
+                "description": "Pre-aggregated daily rollup: seconds moving/idle/parked, distance, max speed. Days are Asia/Jakarta.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stats"
+                ],
+                "summary": "Daily per-device time-in-state and distance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "start day, YYYY-MM-DD (inclusive)",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "end day, YYYY-MM-DD (inclusive)",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "comma-separated IMEIs; omit for all",
+                        "name": "imeis",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ingest.VehicleDay"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "geocode.Result": {
+            "type": "object",
+            "properties": {
+                "Kota": {
+                    "description": "city (empty if the ADM2 is a regency)",
+                    "type": "string"
+                },
+                "cached": {
+                    "description": "true if served from the Redis cache",
+                    "type": "boolean"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "jalan": {
+                    "description": "nearest OSM street (empty if none within range)",
+                    "type": "string"
+                },
+                "kabupaten": {
+                    "description": "regency (empty if the ADM2 is a city)",
+                    "type": "string"
+                },
+                "kecamatan": {
+                    "type": "string"
+                },
+                "kelurahan": {
+                    "description": "village (empty until ADM4 data is loaded)",
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "provinsi": {
+                    "type": "string"
+                }
+            }
+        },
         "ingest.GenericReading": {
             "type": "object",
             "properties": {
@@ -540,6 +864,131 @@
                 }
             }
         },
+        "ingest.MobileHistoryPage": {
+            "type": "object",
+            "properties": {
+                "next_cursor": {
+                    "type": "string"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ingest.MobilePosition"
+                    }
+                }
+            }
+        },
+        "ingest.MobilePosition": {
+            "type": "object",
+            "properties": {
+                "bearing": {
+                    "type": "number"
+                },
+                "driver": {
+                    "type": "string"
+                },
+                "jalan": {
+                    "type": "string"
+                },
+                "kabupaten": {
+                    "type": "string"
+                },
+                "kecamatan": {
+                    "type": "string"
+                },
+                "kelurahan": {
+                    "type": "string"
+                },
+                "kota": {
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "metadata": {
+                    "type": "object"
+                },
+                "provinsi": {
+                    "type": "string"
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "speed": {
+                    "type": "number"
+                },
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "ingest.MobileReading": {
+            "type": "object",
+            "properties": {
+                "altitude": {
+                    "description": "-\u003e metadata",
+                    "type": "number",
+                    "example": 65
+                },
+                "batteryLevel": {
+                    "description": "Phone-specific conveniences: accepted top-level OR inside io; both land in metadata.",
+                    "type": "number",
+                    "example": 41
+                },
+                "bearing": {
+                    "description": "-\u003e bearing column",
+                    "type": "number",
+                    "example": 0
+                },
+                "driver": {
+                    "description": "driver id (required; identity)",
+                    "type": "string",
+                    "example": "649019ee6c7c280f4e46d0a2"
+                },
+                "fakeGps": {
+                    "type": "boolean"
+                },
+                "gpsCreatedAt": {
+                    "type": "string",
+                    "example": "2026-07-21T09:00:00Z"
+                },
+                "gpsOn": {
+                    "type": "boolean"
+                },
+                "io": {
+                    "description": "full app blob -\u003e metadata",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "isOverride": {
+                    "type": "boolean"
+                },
+                "latitude": {
+                    "description": "-\u003e geom",
+                    "type": "number",
+                    "example": -6.9786741
+                },
+                "longitude": {
+                    "description": "-\u003e geom",
+                    "type": "number",
+                    "example": 110.3701788
+                },
+                "speed": {
+                    "description": "-\u003e speed column",
+                    "type": "number",
+                    "example": 0
+                },
+                "status": {
+                    "type": "string",
+                    "example": "Idle"
+                }
+            }
+        },
         "ingest.Position": {
             "type": "object",
             "properties": {
@@ -589,6 +1038,42 @@
                 "time": {
                     "description": "gpsCreatedAt",
                     "type": "string"
+                }
+            }
+        },
+        "ingest.VehicleDay": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "description": "YYYY-MM-DD, Asia/Jakarta",
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "first_seen": {
+                    "type": "string"
+                },
+                "idle_s": {
+                    "type": "integer"
+                },
+                "imei": {
+                    "type": "string"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "max_speed": {
+                    "type": "number"
+                },
+                "moving_s": {
+                    "type": "integer"
+                },
+                "parking_s": {
+                    "type": "integer"
+                },
+                "samples": {
+                    "type": "integer"
                 }
             }
         }
