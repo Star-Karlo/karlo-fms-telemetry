@@ -8,52 +8,6 @@
     },
     "basePath": "/",
     "paths": {
-        "/reverse": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "geocode"
-                ],
-                "summary": "Reverse geocode a coordinate to kecamatan / kota / provinsi",
-                "parameters": [
-                    {
-                        "type": "number",
-                        "example": -6.1751,
-                        "description": "Latitude",
-                        "name": "lat",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "number",
-                        "example": 106.8272,
-                        "description": "Longitude",
-                        "name": "lon",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/geocode.Result"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/v1/coverage": {
             "get": {
                 "description": "~1.2km grid cells. metric=signal returns avg GSM signal (0-5) + dead-zone ratio (provider is a comma-separated subset, combined); metric=terrain returns ruggedness (metres of elevation change per km driven); metric=altitude returns mean elevation in metres. Optional bbox=minLon,minLat,maxLon,maxLat.",
@@ -103,7 +57,7 @@
         },
         "/v1/geofence/check": {
             "get": {
-                "description": "Distance of one truck (imei) or an arbitrary point (lat/lon) to a center. Returns the same fields as one batch result.",
+                "description": "Distance of one truck (imei), one mobile driver (driver), or an arbitrary point (lat/lon) to a center. Pass both imei and driver to use whichever has the fresher live fix. Returns the same fields as one batch result.",
                 "produces": [
                     "application/json"
                 ],
@@ -134,8 +88,14 @@
                     },
                     {
                         "type": "string",
-                        "description": "Test this truck's latest position (or use lat+lon)",
+                        "description": "Test this truck's latest position (or use driver, or lat+lon)",
                         "name": "imei",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Test this mobile driver's latest position",
+                        "name": "driver",
                         "in": "query"
                     },
                     {
@@ -170,7 +130,7 @@
                 }
             },
             "post": {
-                "description": "For each {imei, center, radius}, returns the truck's current distance to the center (and `inside` if radius given). One request, one indexed lookup. The caller (platform) applies its own distance bands (arrive/out/enter) on distance_m. Trucks with no live position return found:false.",
+                "description": "For each {imei and/or driver, center, radius}, returns the current distance to the center (and `inside` if radius given). Identity may be an `imei` (GPS tracker), a `driver` id (mobile app), or BOTH — send both when you don't know which is reporting and the freshest live fix wins; `source` tells you which was used. One request, one indexed lookup per identity type. The caller (platform) applies its own distance bands (arrive/out/enter) on distance_m. No live position → found:false.",
                 "consumes": [
                     "application/json"
                 ],
@@ -665,46 +625,6 @@
         }
     },
     "definitions": {
-        "geocode.Result": {
-            "type": "object",
-            "properties": {
-                "Kota": {
-                    "description": "city (empty if the ADM2 is a regency)",
-                    "type": "string"
-                },
-                "cached": {
-                    "description": "true if served from the Redis cache",
-                    "type": "boolean"
-                },
-                "found": {
-                    "type": "boolean"
-                },
-                "jalan": {
-                    "description": "nearest OSM street (empty if none within range)",
-                    "type": "string"
-                },
-                "kabupaten": {
-                    "description": "regency (empty if the ADM2 is a city)",
-                    "type": "string"
-                },
-                "kecamatan": {
-                    "type": "string"
-                },
-                "kelurahan": {
-                    "description": "village (empty until ADM4 data is loaded)",
-                    "type": "string"
-                },
-                "lat": {
-                    "type": "number"
-                },
-                "lon": {
-                    "type": "number"
-                },
-                "provinsi": {
-                    "type": "string"
-                }
-            }
-        },
         "ingest.GenericReading": {
             "type": "object",
             "properties": {
@@ -775,8 +695,13 @@
                     "type": "number",
                     "example": 106.8
                 },
+                "driver": {
+                    "description": "mobile-app driver id; its latest live position",
+                    "type": "string",
+                    "example": "649019ee6c7c280f4e46d0a2"
+                },
                 "imei": {
-                    "description": "device to test (its latest live position)",
+                    "description": "GPS tracker; its latest live position",
                     "type": "string",
                     "example": "350612071419004"
                 },
@@ -816,11 +741,16 @@
                     "description": "metres from the point to the center",
                     "type": "number"
                 },
+                "driver": {
+                    "description": "echoed from the request",
+                    "type": "string"
+                },
                 "found": {
-                    "description": "false if the truck has no live position",
+                    "description": "false if neither identity has a live position",
                     "type": "boolean"
                 },
                 "imei": {
+                    "description": "echoed from the request",
                     "type": "string"
                 },
                 "inside": {
@@ -833,6 +763,10 @@
                 },
                 "lon": {
                     "type": "number"
+                },
+                "source": {
+                    "description": "which identity supplied the position: \"gps\" | \"mobile\"",
+                    "type": "string"
                 },
                 "time": {
                     "description": "fix time of that position",

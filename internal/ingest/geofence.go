@@ -32,12 +32,15 @@ func validLatLon(lat, lon float64) bool {
 	return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
 }
 
-// GeofenceCheck is one item in a batch geofence request.
+// GeofenceCheck is one item in a batch geofence request. Identity is `imei`
+// (GPS tracker), `driver` (mobile app), or BOTH — send both when you don't know
+// which one is currently reporting and the freshest live fix wins.
 type GeofenceCheck struct {
-	IMEI      string   `json:"imei" example:"350612071419004"`   // device to test (its latest live position)
-	CenterLat float64  `json:"center_lat" example:"-6.2"`         // warehouse center latitude
-	CenterLon float64  `json:"center_lon" example:"106.8"`        // warehouse center longitude
-	RadiusM   *float64 `json:"radius_m,omitempty" example:"8000"` // optional; if set, `inside` = distance_m <= radius_m
+	IMEI      string   `json:"imei,omitempty" example:"350612071419004"`         // GPS tracker; its latest live position
+	Driver    string   `json:"driver,omitempty" example:"649019ee6c7c280f4e46d0a2"` // mobile-app driver id; its latest live position
+	CenterLat float64  `json:"center_lat" example:"-6.2"`                        // warehouse center latitude
+	CenterLon float64  `json:"center_lon" example:"106.8"`                       // warehouse center longitude
+	RadiusM   *float64 `json:"radius_m,omitempty" example:"8000"`                // optional; if set, `inside` = distance_m <= radius_m
 }
 
 // GeofenceRequest is the batch body for POST /v1/geofence/check.
@@ -48,13 +51,15 @@ type GeofenceRequest struct {
 // GeofenceResult is one check's answer. distance_m is the real output — the
 // caller applies its own distance bands (arrive/out/enter) on it.
 type GeofenceResult struct {
-	IMEI      string     `json:"imei"`
-	Found     bool       `json:"found"`                 // false if the truck has no live position
-	DistanceM *float64   `json:"distance_m,omitempty"`  // metres from the point to the center
-	Inside    *bool      `json:"inside,omitempty"`      // present only when radius_m was given
-	Lat       *float64   `json:"lat,omitempty"`         // the position used
+	IMEI      string     `json:"imei,omitempty"`   // echoed from the request
+	Driver    string     `json:"driver,omitempty"` // echoed from the request
+	Source    string     `json:"source,omitempty"` // which identity supplied the position: "gps" | "mobile"
+	Found     bool       `json:"found"`            // false if neither identity has a live position
+	DistanceM *float64   `json:"distance_m,omitempty"` // metres from the point to the center
+	Inside    *bool      `json:"inside,omitempty"`     // present only when radius_m was given
+	Lat       *float64   `json:"lat,omitempty"`        // the position used
 	Lon       *float64   `json:"lon,omitempty"`
-	Time      *time.Time `json:"time,omitempty"`        // fix time of that position
+	Time      *time.Time `json:"time,omitempty"` // fix time of that position
 }
 
 // GeofenceResponse wraps the batch results (order matches the request).
@@ -65,7 +70,7 @@ type GeofenceResponse struct {
 // handleGeofenceCheckBatch godoc
 //
 //	@Summary		Batch radius check: are these trucks within their circles?
-//	@Description	For each {imei, center, radius}, returns the truck's current distance to the center (and `inside` if radius given). One request, one indexed lookup. The caller (platform) applies its own distance bands (arrive/out/enter) on distance_m. Trucks with no live position return found:false.
+//	@Description	For each {imei and/or driver, center, radius}, returns the current distance to the center (and `inside` if radius given). Identity may be an `imei` (GPS tracker), a `driver` id (mobile app), or BOTH — send both when you don't know which is reporting and the freshest live fix wins; `source` tells you which was used. One request, one indexed lookup per identity type. The caller (platform) applies its own distance bands (arrive/out/enter) on distance_m. No live position → found:false.
 //	@Tags			geofence
 //	@Accept			json
 //	@Produce		json
@@ -93,46 +98,102 @@ func (h *Handler) handleGeofenceCheckBatch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	seen := map[string]bool{}
+	// Collect the two identity sets separately: each is one indexed lookup
+	// against its own table (latest / mobile_latest).
+	seenIMEI, seenDriver := map[string]bool{}, map[string]bool{}
 	imeis := make([]string, 0, len(req.Checks))
+	drivers := make([]string, 0, len(req.Checks))
 	for i, c := range req.Checks {
-		if c.IMEI == "" || !validIMEI(c.IMEI) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("check %d: missing/invalid imei", i)})
+		if c.IMEI == "" && c.Driver == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("check %d: imei or driver required", i)})
+			return
+		}
+		if c.IMEI != "" && !validIMEI(c.IMEI) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("check %d: invalid imei", i)})
+			return
+		}
+		if c.Driver != "" && !validIMEI(c.Driver) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("check %d: invalid driver", i)})
 			return
 		}
 		if !validLatLon(c.CenterLat, c.CenterLon) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("check %d: center out of range", i)})
 			return
 		}
-		if !seen[c.IMEI] {
-			seen[c.IMEI] = true
+		if c.IMEI != "" && !seenIMEI[c.IMEI] {
+			seenIMEI[c.IMEI] = true
 			imeis = append(imeis, c.IMEI)
+		}
+		if c.Driver != "" && !seenDriver[c.Driver] {
+			seenDriver[c.Driver] = true
+			drivers = append(drivers, c.Driver)
 		}
 	}
 
-	positions, err := h.r.LivePositions(r.Context(), imeis)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
-		return
+	var gps, mob map[string]GeoPos
+	if len(imeis) > 0 {
+		var err error
+		if gps, err = h.r.LivePositions(r.Context(), imeis); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+			return
+		}
+	}
+	if len(drivers) > 0 {
+		if h.mob == nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "mobile store unavailable"})
+			return
+		}
+		var err error
+		if mob, err = h.mob.LivePositions(r.Context(), drivers); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+			return
+		}
 	}
 
 	results := make([]GeofenceResult, 0, len(req.Checks))
 	for _, c := range req.Checks {
-		results = append(results, evalCheck(c.IMEI, c.CenterLat, c.CenterLon, c.RadiusM, positions[c.IMEI], positionExists(positions, c.IMEI)))
+		pos, source, found := resolveGeoPos(c.IMEI, c.Driver, gps, mob)
+		results = append(results, evalCheck(c.IMEI, c.Driver, source, c.CenterLat, c.CenterLon, c.RadiusM, pos, found))
 	}
 	writeJSON(w, http.StatusOK, GeofenceResponse{Results: results})
+}
+
+// resolveGeoPos picks the position to test: whichever identity has a live fix,
+// and when both do, the fresher one. Returns the source that supplied it.
+func resolveGeoPos(imei, driver string, gps, mob map[string]GeoPos) (GeoPos, string, bool) {
+	g, gok := GeoPos{}, false
+	if imei != "" {
+		g, gok = gps[imei]
+	}
+	m, mok := GeoPos{}, false
+	if driver != "" {
+		m, mok = mob[driver]
+	}
+	switch {
+	case gok && mok:
+		if m.Time.After(g.Time) {
+			return m, "mobile", true
+		}
+		return g, "gps", true
+	case gok:
+		return g, "gps", true
+	case mok:
+		return m, "mobile", true
+	}
+	return GeoPos{}, "", false
 }
 
 // handleGeofenceCheckOne godoc
 //
 //	@Summary		Single radius check (convenience/testing)
-//	@Description	Distance of one truck (imei) or an arbitrary point (lat/lon) to a center. Returns the same fields as one batch result.
+//	@Description	Distance of one truck (imei), one mobile driver (driver), or an arbitrary point (lat/lon) to a center. Pass both imei and driver to use whichever has the fresher live fix. Returns the same fields as one batch result.
 //	@Tags			geofence
 //	@Produce		json
 //	@Param			center_lat	query		number	true	"Center latitude"
 //	@Param			center_lon	query		number	true	"Center longitude"
 //	@Param			radius_m	query		number	false	"Optional radius; sets `inside`"
-//	@Param			imei		query		string	false	"Test this truck's latest position (or use lat+lon)"
+//	@Param			imei		query		string	false	"Test this truck's latest position (or use driver, or lat+lon)"
+//	@Param			driver		query		string	false	"Test this mobile driver's latest position"
 //	@Param			lat			query		number	false	"Test an arbitrary point (with lon)"
 //	@Param			lon			query		number	false	"Test an arbitrary point (with lat)"
 //	@Success		200			{object}	GeofenceResult
@@ -153,18 +214,37 @@ func (h *Handler) handleGeofenceCheckOne(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if imei := q.Get("imei"); imei != "" {
-		if !validIMEI(imei) {
+	imei, driver := q.Get("imei"), q.Get("driver")
+	if imei != "" || driver != "" {
+		if imei != "" && !validIMEI(imei) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid imei"})
 			return
 		}
-		positions, err := h.r.LivePositions(r.Context(), []string{imei})
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+		if driver != "" && !validIMEI(driver) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid driver"})
 			return
 		}
-		p, ok := positions[imei]
-		writeJSON(w, http.StatusOK, evalCheck(imei, centerLat, centerLon, radius, p, ok))
+		var gps, mob map[string]GeoPos
+		if imei != "" {
+			var err error
+			if gps, err = h.r.LivePositions(r.Context(), []string{imei}); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+				return
+			}
+		}
+		if driver != "" {
+			if h.mob == nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "mobile store unavailable"})
+				return
+			}
+			var err error
+			if mob, err = h.mob.LivePositions(r.Context(), []string{driver}); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+				return
+			}
+		}
+		pos, source, found := resolveGeoPos(imei, driver, gps, mob)
+		writeJSON(w, http.StatusOK, evalCheck(imei, driver, source, centerLat, centerLon, radius, pos, found))
 		return
 	}
 
@@ -172,20 +252,15 @@ func (h *Handler) handleGeofenceCheckOne(w http.ResponseWriter, r *http.Request)
 	lat, e1 := strconv.ParseFloat(q.Get("lat"), 64)
 	lon, e2 := strconv.ParseFloat(q.Get("lon"), 64)
 	if e1 != nil || e2 != nil || !validLatLon(lat, lon) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provide imei, or a valid lat and lon"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provide imei or driver, or a valid lat and lon"})
 		return
 	}
-	writeJSON(w, http.StatusOK, evalCheck("", centerLat, centerLon, radius, GeoPos{Lat: lat, Lon: lon}, true))
-}
-
-func positionExists(m map[string]GeoPos, imei string) bool {
-	_, ok := m[imei]
-	return ok
+	writeJSON(w, http.StatusOK, evalCheck("", "", "point", centerLat, centerLon, radius, GeoPos{Lat: lat, Lon: lon}, true))
 }
 
 // evalCheck builds a result from a resolved position (found=ok).
-func evalCheck(imei string, centerLat, centerLon float64, radius *float64, pos GeoPos, found bool) GeofenceResult {
-	res := GeofenceResult{IMEI: imei, Found: found}
+func evalCheck(imei, driver, source string, centerLat, centerLon float64, radius *float64, pos GeoPos, found bool) GeofenceResult {
+	res := GeofenceResult{IMEI: imei, Driver: driver, Source: source, Found: found}
 	if !found {
 		no := false
 		res.Inside = &no

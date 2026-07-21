@@ -265,6 +265,29 @@ func (m *MobileStore) LiveOne(ctx context.Context, driver string) (*MobilePositi
 	return &ps[0], nil
 }
 
+// LivePositions returns the latest lat/lon (+fix time) for the given drivers —
+// only those with a live row. Lean (no metadata/geocode), the driver-keyed twin
+// of Reader.LivePositions, so geofence can resolve either identity the same way.
+func (m *MobileStore) LivePositions(ctx context.Context, drivers []string) (map[string]GeoPos, error) {
+	rows, err := m.pool.Query(ctx,
+		`SELECT driver, ST_Y(geom::geometry), ST_X(geom::geometry), time
+		 FROM mobile_latest WHERE driver = ANY($1) AND geom IS NOT NULL`, drivers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]GeoPos, len(drivers))
+	for rows.Next() {
+		var driver string
+		var p GeoPos
+		if err := rows.Scan(&driver, &p.Lat, &p.Lon, &p.Time); err != nil {
+			return nil, err
+		}
+		out[driver] = p
+	}
+	return out, rows.Err()
+}
+
 // MobileHistoryPage is one page of a driver's track.
 type MobileHistoryPage struct {
 	Points     []MobilePosition `json:"points"`
