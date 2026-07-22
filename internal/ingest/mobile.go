@@ -435,7 +435,7 @@ func thinMobile(pts []MobilePosition, n int) []MobilePosition {
 //	@Accept			json
 //	@Produce		json
 //	@Param			X-Ingest-Key	header	string			false	"Shared ingest API key (required when the service is configured with one)"
-//	@Param			payload			body	MobileReading	true	"A reading (or a JSON array of readings)"
+//	@Param			payload			body	[]MobileReading	true	"Array of readings (a single reading object is also accepted)"
 //	@Success		202	{object}	IngestResult
 //	@Failure		400	{object}	map[string]string
 //	@Failure		401	{object}	map[string]string

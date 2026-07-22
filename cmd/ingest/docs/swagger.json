@@ -323,12 +323,15 @@
                         "in": "header"
                     },
                     {
-                        "description": "A reading (or a JSON array of readings)",
+                        "description": "Array of readings (a single reading object is also accepted)",
                         "name": "payload",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/ingest.MobileReading"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ingest.MobileReading"
+                            }
                         }
                     }
                 ],
