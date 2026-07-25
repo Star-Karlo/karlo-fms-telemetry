@@ -10,7 +10,7 @@ migrate-remote:
 swagger:
 	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
 	swag init -g main.go -d cmd/geocode,internal/geocode -o cmd/geocode/docs
-	swag init -g main.go -d cmd/ingest,internal/ingest   -o cmd/ingest/docs
+	swag init -g main.go -d cmd/ingest,internal/ingest,internal/dashcam -o cmd/ingest/docs
 	@echo "swagger specs regenerated"
 
 # Run the geocode service (Swagger UI at http://localhost:8081/swagger/index.html)

@@ -21,8 +21,10 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	_ "github.com/karlo/fms/cmd/ingest/docs"
+	"github.com/karlo/fms/internal/dashcam"
 	"github.com/karlo/fms/internal/geocode"
 	"github.com/karlo/fms/internal/ingest"
+	"github.com/karlo/fms/internal/vss"
 )
 
 func main() {
@@ -100,6 +102,17 @@ func main() {
 	})
 	r.Get("/swagger/*", httpSwagger.WrapHandler)
 	h.Routes(r)
+
+	// Dashcam (Gtrack VSS) front. Empty VSS_BASE_URL leaves the endpoints
+	// answering 503 and touches nothing else. Video clips land in the same
+	// cold-storage bucket as the telemetry parquet, under video/.
+	vssClient := vss.New(vss.Config{
+		BaseURL:  env("VSS_BASE_URL", ""),
+		Username: env("VSS_USERNAME", ""),
+		Password: env("VSS_PASSWORD", ""),
+	})
+	videoBucket := env("VIDEO_S3_BUCKET", env("S3_BUCKET", "karlo-fms-cold-storage"))
+	dashcam.NewHandler(vssClient, h.Authorized, videoBucket).Routes(r)
 
 	// Coverage/terrain spatial grid: nightly rollup of signal + ruggedness, plus
 	// the read endpoint. Seeds the hot window on startup, then rolls up daily.

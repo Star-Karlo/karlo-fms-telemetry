@@ -62,6 +62,263 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/dashcams": {
+            "get": {
+                "description": "Fronts the VSS device list. Tenant-agnostic; FMS maps devices to vehicles and scopes by tenant.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "List dashcam devices and their online state",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ingest API key",
+                        "name": "X-Ingest-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "filter by device id/name",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/dashcams/downloads/{jobId}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "Poll a download job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ingest API key",
+                        "name": "X-Ingest-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "job id",
+                        "name": "jobId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/dashcams/{deviceId}/download": {
+            "post": {
+                "description": "Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/. Returns a job id to poll; the finished job carries the S3 key FMS records.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "Pull a clip to S3 (async)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ingest API key",
+                        "name": "X-Ingest-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "VSS device id",
+                        "name": "deviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "clip to pull",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dashcam.DownloadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/dashcams/{deviceId}/live": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "Embeddable live-view URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ingest API key",
+                        "name": "X-Ingest-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "VSS device id",
+                        "name": "deviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "channel list e.g. 1_2",
+                        "name": "channel",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "main|sub (default sub)",
+                        "name": "stream",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/dashcams/{deviceId}/videos": {
+            "get": {
+                "description": "Clips on the device SD card for the given day. Each clip is annotated with the position the dashcam's own GPS reported at the clip's start (derived — the vendor's clip list carries no coordinate).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "List a device's clips for a date, with coordinates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ingest API key",
+                        "name": "X-Ingest-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "VSS device id",
+                        "name": "deviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "channel list e.g. 1_2 (default all)",
+                        "name": "channel",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dashcam.Clip"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/geofence/check": {
             "get": {
                 "description": "Distance of one truck (imei), one mobile driver (driver), or an arbitrary point (lat/lon) to a center. Pass both imei and driver to use whichever has the fresher live fix. Returns the same fields as one batch result.",
@@ -635,6 +892,54 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dashcam.Clip": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "integer"
+                },
+                "duration": {
+                    "type": "integer"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "stop": {
+                    "type": "string"
+                }
+            }
+        },
+        "dashcam.DownloadRequest": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "integer"
+                },
+                "path": {
+                    "description": "the clip's device path, from a prior /videos call",
+                    "type": "string"
+                },
+                "start": {
+                    "description": "\"2006-01-02 15:04:05\"",
+                    "type": "string"
+                },
+                "stop": {
+                    "type": "string"
+                }
+            }
+        },
         "ingest.GenericReading": {
             "type": "object",
             "properties": {

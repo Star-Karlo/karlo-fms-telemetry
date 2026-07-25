@@ -16,6 +16,13 @@ import (
 // storage than Standard, still millisecond retrieval. Credentials/region come
 // from the standard AWS chain (AWS_PROFILE / env / instance role).
 func UploadFile(ctx context.Context, bucket, key, path string, storageClass types.StorageClass) error {
+	return UploadFileAs(ctx, bucket, key, path, storageClass, "application/vnd.apache.parquet")
+}
+
+// UploadFileAs is UploadFile with an explicit content type. Dashcam clips are
+// "video/mp4", not parquet — the content type drives how a browser opening the
+// S3 URL later handles the object.
+func UploadFileAs(ctx context.Context, bucket, key, path string, storageClass types.StorageClass, contentType string) error {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("aws config: %w", err)
@@ -32,7 +39,7 @@ func UploadFile(ctx context.Context, bucket, key, path string, storageClass type
 		Key:          &key,
 		Body:         f,
 		StorageClass: storageClass,
-		ContentType:  aws.String("application/vnd.apache.parquet"),
+		ContentType:  aws.String(contentType),
 	})
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", key, err)

@@ -1,0 +1,382 @@
+// Package dashcam is the telemetry service's VSS front. FMS calls these
+// endpoints; this package calls VSS. FMS never touches VSS directly.
+//
+// It does the three things VSS is needed for on demand:
+//   - list a device's clips for a date (annotated with the coordinate the
+//     dashcam's own GPS reported at that moment)
+//   - pull a chosen clip onto S3 for durable keeping (accident evidence)
+//   - mint a short-lived live/playback URL for the browser to iframe
+//
+// Continuous event ingestion (DMS/ADAS/collision over the VSS WebSocket) is a
+// separate concern handled alongside GPS ingest; see events.go.
+//
+// Endpoints are API-key gated with the SAME key as /v1/ingest and are
+// tenant-agnostic — this is the raw layer. FMS holds the device<->vehicle link
+// and the tenant scoping.
+package dashcam
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/karlo/fms/internal/archive"
+	"github.com/karlo/fms/internal/vss"
+)
+
+// AuthFunc reports whether a presented X-Ingest-Key is valid. Passed in rather
+// than reimplemented so there is one auth path in the service.
+type AuthFunc func(ctx context.Context, presentedKey string) bool
+
+// Handler serves the dashcam endpoints.
+type Handler struct {
+	vss    *vss.Client
+	auth   AuthFunc
+	bucket string
+	jobs   *jobStore
+	client *http.Client
+}
+
+// NewHandler builds the handler. bucket is where downloaded clips are kept
+// (karlo-fms-cold-storage); videos land under the "video/" prefix, beside the
+// telemetry parquet.
+func NewHandler(client *vss.Client, auth AuthFunc, bucket string) *Handler {
+	return &Handler{
+		vss: client, auth: auth, bucket: bucket,
+		jobs:   newJobStore(),
+		client: &http.Client{Timeout: 10 * time.Minute}, // clip pulls are large + slow
+	}
+}
+
+// Routes mounts the dashcam endpoints.
+func (h *Handler) Routes(r chi.Router) {
+	r.Get("/v1/dashcams", h.gated(h.list))
+	r.Get("/v1/dashcams/{deviceId}/videos", h.gated(h.videos))
+	r.Get("/v1/dashcams/{deviceId}/live", h.gated(h.live))
+	r.Post("/v1/dashcams/{deviceId}/download", h.gated(h.startDownload))
+	r.Get("/v1/dashcams/downloads/{jobId}", h.gated(h.downloadStatus))
+}
+
+func (h *Handler) gated(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !h.auth(r.Context(), r.Header.Get("X-Ingest-Key")) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or missing X-Ingest-Key"})
+			return
+		}
+		next(w, r)
+	}
+}
+
+// fail maps a VSS failure to the right HTTP status: not-configured -> 503,
+// device-offline -> 200 with an offline flag (expected), everything else -> 502.
+func (h *Handler) fail(w http.ResponseWriter, err error) {
+	if errors.Is(err, vss.ErrNotConfigured) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "camera platform not configured (VSS_BASE_URL/USERNAME/PASSWORD)"})
+		return
+	}
+	var apiErr *vss.APIError
+	if errors.As(err, &apiErr) && apiErr.Offline() {
+		writeJSON(w, http.StatusOK, map[string]any{"offline": true})
+		return
+	}
+	log.Printf("dashcam: %v", err)
+	writeJSON(w, http.StatusBadGateway, map[string]string{"error": "camera platform unreachable"})
+}
+
+// list godoc
+//
+//	@Summary		List dashcam devices and their online state
+//	@Description	Fronts the VSS device list. Tenant-agnostic; FMS maps devices to vehicles and scopes by tenant.
+//	@Tags			dashcams
+//	@Produce		json
+//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
+//	@Param			q				query	string	false	"filter by device id/name"
+//	@Success		200	{array}		map[string]interface{}
+//	@Failure		503	{object}	map[string]string
+//	@Router			/v1/dashcams [get]
+func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+	devices, err := h.vss.ListDevices(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	type dev struct {
+		DeviceID     string `json:"device_id"`
+		DeviceName   string `json:"device_name"`
+		DeviceType   string `json:"device_type"`
+		Channels     int    `json:"channels"`
+		ChannelNames string `json:"channel_names"`
+		Online       bool   `json:"online"`
+		AccessMode   int    `json:"access_mode"`
+	}
+	out := make([]dev, 0, len(devices))
+	for _, d := range devices {
+		out = append(out, dev{
+			DeviceID: d.DeviceNo, DeviceName: d.DeviceName, DeviceType: d.DeviceType,
+			Channels: d.VideoChannels, ChannelNames: d.ChannelName,
+			Online: d.Online(), AccessMode: d.AccessMode,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// Clip is one SD-card clip, annotated with the coordinate derived from the
+// device's GPS track at the clip's start.
+type Clip struct {
+	Channel  int      `json:"channel"`
+	Start    string   `json:"start"`
+	Stop     string   `json:"stop"`
+	Duration int      `json:"duration"`
+	Size     int64    `json:"size"`
+	Path     string   `json:"path"`
+	Lat      *float64 `json:"lat"`
+	Lon      *float64 `json:"lon"`
+}
+
+// videos godoc
+//
+//	@Summary		List a device's clips for a date, with coordinates
+//	@Description	Clips on the device SD card for the given day. Each clip is annotated with the position the dashcam's own GPS reported at the clip's start (derived — the vendor's clip list carries no coordinate).
+//	@Tags			dashcams
+//	@Produce		json
+//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
+//	@Param			deviceId		path	string	true	"VSS device id"
+//	@Param			date			query	string	true	"YYYY-MM-DD"
+//	@Param			channel			query	string	false	"channel list e.g. 1_2 (default all)"
+//	@Success		200	{array}		dashcam.Clip
+//	@Failure		400	{object}	map[string]string
+//	@Router			/v1/dashcams/{deviceId}/videos [get]
+func (h *Handler) videos(w http.ResponseWriter, r *http.Request) {
+	deviceID := chi.URLParam(r, "deviceId")
+	day, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "date must be YYYY-MM-DD"})
+		return
+	}
+	from, to := day, day.Add(24*time.Hour)
+	channels := parseChannels(r.URL.Query().Get("channel"))
+
+	files, err := h.vss.SearchVideos(r.Context(), deviceID, channels, from, to)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	// The dashcam's own GPS for the day, once — then each clip's coordinate is
+	// the nearest fix to its start. A failed track lookup is not fatal: clips
+	// list with null coordinates rather than not at all.
+	track, terr := h.vss.Track(r.Context(), deviceID, from, to)
+	if terr != nil {
+		log.Printf("dashcam: track for %s: %v (coordinates omitted)", deviceID, terr)
+	}
+
+	out := make([]Clip, 0, len(files))
+	for _, f := range files {
+		c := Clip{Channel: f.Channel, Start: f.Start, Stop: f.Stop, Duration: f.Duration, Size: f.Size, Path: f.Path}
+		if st, e := time.Parse("2006-01-02 15:04:05", f.Start); e == nil {
+			if fix, ok := vss.NearestFix(track, st); ok {
+				lat, lon := fix.Lat, fix.Lon
+				c.Lat, c.Lon = &lat, &lon
+			}
+		}
+		out = append(out, c)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// live godoc
+//
+//	@Summary		Embeddable live-view URL
+//	@Tags			dashcams
+//	@Produce		json
+//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
+//	@Param			deviceId		path	string	true	"VSS device id"
+//	@Param			channel			query	string	false	"channel list e.g. 1_2"
+//	@Param			stream			query	string	false	"main|sub (default sub)"
+//	@Success		200	{object}	map[string]string
+//	@Router			/v1/dashcams/{deviceId}/live [get]
+func (h *Handler) live(w http.ResponseWriter, r *http.Request) {
+	deviceID := chi.URLParam(r, "deviceId")
+	u, err := h.vss.LiveURL(r.Context(), deviceID, parseChannels(r.URL.Query().Get("channel")),
+		r.URL.Query().Get("stream") == "main")
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": u})
+}
+
+// DownloadRequest asks for one clip to be pulled to S3.
+type DownloadRequest struct {
+	Channel int    `json:"channel"`
+	Path    string `json:"path"`  // the clip's device path, from a prior /videos call
+	Start   string `json:"start"` // "2006-01-02 15:04:05"
+	Stop    string `json:"stop"`
+}
+
+// startDownload godoc
+//
+//	@Summary		Pull a clip to S3 (async)
+//	@Description	Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/. Returns a job id to poll; the finished job carries the S3 key FMS records.
+//	@Tags			dashcams
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-Ingest-Key	header	string					true	"ingest API key"
+//	@Param			deviceId		path	string					true	"VSS device id"
+//	@Param			body			body	dashcam.DownloadRequest	true	"clip to pull"
+//	@Success		202	{object}	map[string]string
+//	@Router			/v1/dashcams/{deviceId}/download [post]
+func (h *Handler) startDownload(w http.ResponseWriter, r *http.Request) {
+	deviceID := chi.URLParam(r, "deviceId")
+	var req DownloadRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.Path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "channel and clip path are required"})
+		return
+	}
+	const layout = "2006-01-02 15:04:05"
+	from, err1 := time.Parse(layout, req.Start)
+	to, err2 := time.Parse(layout, req.Stop)
+	if err1 != nil || err2 != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "start and stop must be 'YYYY-MM-DD HH:MM:SS'"})
+		return
+	}
+
+	job := h.jobs.create()
+	// Detached from the request: the pull can take minutes, longer than any
+	// client will hold a connection. FMS polls the job instead.
+	go h.runDownload(context.Background(), job, deviceID, req, from, to)
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID})
+}
+
+func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, req DownloadRequest, from, to time.Time) {
+	h.jobs.set(job.ID, "downloading", "", "")
+	task, err := h.vss.StartDownload(ctx, deviceID, req.Channel, from, to, req.Path)
+	if err != nil {
+		h.jobs.set(job.ID, "failed", "", err.Error())
+		return
+	}
+	// Poll VSS until the file is ready on its server.
+	deadline := time.Now().Add(8 * time.Minute)
+	for {
+		if time.Now().After(deadline) {
+			h.jobs.set(job.ID, "failed", "", "timed out waiting for VSS to prepare the clip")
+			return
+		}
+		time.Sleep(4 * time.Second)
+		p, perr := h.vss.DownloadStatus(ctx, task.TaskID, task.ResWebPath)
+		if perr != nil {
+			h.jobs.set(job.ID, "failed", "", perr.Error())
+			return
+		}
+		if p.Failed() {
+			h.jobs.set(job.ID, "failed", "", fmt.Sprintf("VSS download state %d", p.DownState))
+			return
+		}
+		if p.Done() {
+			break
+		}
+	}
+
+	// Fetch the finished file from the VSS file server, then push to S3. A temp
+	// file rather than buffering in memory — a clip is tens of MB.
+	h.jobs.set(job.ID, "uploading", "", "")
+	key := videoKey(deviceID, req.Channel, from)
+	if err := h.pullToS3(ctx, task.FileURL(), key); err != nil {
+		h.jobs.set(job.ID, "failed", "", err.Error())
+		return
+	}
+	h.jobs.set(job.ID, "done", key, "")
+}
+
+// pullToS3 streams the VSS file to a temp file and uploads it. Video kept as
+// S3 Standard, not Glacier: accident evidence is retrieved interactively and
+// must be instantly available, unlike the archival parquet.
+func (h *Handler) pullToS3(ctx context.Context, fileURL, key string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch clip: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("fetch clip: HTTP %d", resp.StatusCode)
+	}
+	tmp, err := os.CreateTemp("", "dashcam-*.mp4")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		return fmt.Errorf("buffer clip: %w", err)
+	}
+	tmp.Close()
+	return archive.UploadFileAs(ctx, h.bucket, key, tmp.Name(), types.StorageClassStandard, "video/mp4")
+}
+
+// downloadStatus godoc
+//
+//	@Summary	Poll a download job
+//	@Tags		dashcams
+//	@Produce	json
+//	@Param		X-Ingest-Key	header	string	true	"ingest API key"
+//	@Param		jobId			path	string	true	"job id"
+//	@Success	200	{object}	map[string]string
+//	@Failure	404	{object}	map[string]string
+//	@Router		/v1/dashcams/downloads/{jobId} [get]
+func (h *Handler) downloadStatus(w http.ResponseWriter, r *http.Request) {
+	j, ok := h.jobs.get(chi.URLParam(r, "jobId"))
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "job not found"})
+		return
+	}
+	resp := map[string]string{"status": j.Status}
+	if j.S3Key != "" {
+		resp["s3_key"] = j.S3Key
+		resp["bucket"] = h.bucket
+	}
+	if j.Err != "" {
+		resp["error"] = j.Err
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// videoKey is the S3 object key for a clip, partitioned by device and day so
+// the bucket stays browsable and lifecycle rules can target old video.
+func videoKey(deviceID string, channel int, at time.Time) string {
+	return fmt.Sprintf("video/%s/%s/ch%d_%s.mp4",
+		deviceID, at.Format("2006-01-02"), channel, at.Format("150405"))
+}
+
+func parseChannels(q string) []int {
+	if q == "" {
+		return nil
+	}
+	out := []int{}
+	for _, p := range strings.Split(q, "_") {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}

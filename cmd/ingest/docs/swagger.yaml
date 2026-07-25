@@ -1,5 +1,37 @@
 basePath: /
 definitions:
+  dashcam.Clip:
+    properties:
+      channel:
+        type: integer
+      duration:
+        type: integer
+      lat:
+        type: number
+      lon:
+        type: number
+      path:
+        type: string
+      size:
+        type: integer
+      start:
+        type: string
+      stop:
+        type: string
+    type: object
+  dashcam.DownloadRequest:
+    properties:
+      channel:
+        type: integer
+      path:
+        description: the clip's device path, from a prior /videos call
+        type: string
+      start:
+        description: '"2006-01-02 15:04:05"'
+        type: string
+      stop:
+        type: string
+    type: object
   ingest.GenericReading:
     properties:
       altitude:
@@ -319,6 +351,181 @@ paths:
       summary: Signal / terrain / altitude coverage grid (GeoJSON)
       tags:
       - coverage
+  /v1/dashcams:
+    get:
+      description: Fronts the VSS device list. Tenant-agnostic; FMS maps devices to
+        vehicles and scopes by tenant.
+      parameters:
+      - description: ingest API key
+        in: header
+        name: X-Ingest-Key
+        required: true
+        type: string
+      - description: filter by device id/name
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List dashcam devices and their online state
+      tags:
+      - dashcams
+  /v1/dashcams/{deviceId}/download:
+    post:
+      consumes:
+      - application/json
+      description: Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/.
+        Returns a job id to poll; the finished job carries the S3 key FMS records.
+      parameters:
+      - description: ingest API key
+        in: header
+        name: X-Ingest-Key
+        required: true
+        type: string
+      - description: VSS device id
+        in: path
+        name: deviceId
+        required: true
+        type: string
+      - description: clip to pull
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/dashcam.DownloadRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Pull a clip to S3 (async)
+      tags:
+      - dashcams
+  /v1/dashcams/{deviceId}/live:
+    get:
+      parameters:
+      - description: ingest API key
+        in: header
+        name: X-Ingest-Key
+        required: true
+        type: string
+      - description: VSS device id
+        in: path
+        name: deviceId
+        required: true
+        type: string
+      - description: channel list e.g. 1_2
+        in: query
+        name: channel
+        type: string
+      - description: main|sub (default sub)
+        in: query
+        name: stream
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Embeddable live-view URL
+      tags:
+      - dashcams
+  /v1/dashcams/{deviceId}/videos:
+    get:
+      description: Clips on the device SD card for the given day. Each clip is annotated
+        with the position the dashcam's own GPS reported at the clip's start (derived
+        — the vendor's clip list carries no coordinate).
+      parameters:
+      - description: ingest API key
+        in: header
+        name: X-Ingest-Key
+        required: true
+        type: string
+      - description: VSS device id
+        in: path
+        name: deviceId
+        required: true
+        type: string
+      - description: YYYY-MM-DD
+        in: query
+        name: date
+        required: true
+        type: string
+      - description: channel list e.g. 1_2 (default all)
+        in: query
+        name: channel
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dashcam.Clip'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List a device's clips for a date, with coordinates
+      tags:
+      - dashcams
+  /v1/dashcams/downloads/{jobId}:
+    get:
+      parameters:
+      - description: ingest API key
+        in: header
+        name: X-Ingest-Key
+        required: true
+        type: string
+      - description: job id
+        in: path
+        name: jobId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Poll a download job
+      tags:
+      - dashcams
   /v1/geofence/check:
     get:
       description: Distance of one truck (imei), one mobile driver (driver), or an

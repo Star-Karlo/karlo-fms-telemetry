@@ -36,6 +36,12 @@ func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, mob *MobileStor
 //
 // With neither configured the endpoint stays open, preserving the historical
 // behaviour for local/dev runs (cmd/ingest logs a warning in that state).
+// Authorized exposes the same key check to other handlers in the service (e.g.
+// dashcam) so there is one auth path, not two that can drift.
+func (h *Handler) Authorized(ctx context.Context, presented string) bool {
+	return h.authorized(ctx, presented)
+}
+
 func (h *Handler) authorized(ctx context.Context, presented string) bool {
 	if h.apiKey == "" && h.keys == nil {
 		return true
