@@ -82,11 +82,20 @@ type Client struct {
 	cfg  Config
 	http *http.Client
 
-	mu      sync.Mutex
-	token   string
-	pid     string // WebSocket credential, returned by the same login
-	fetched time.Time
+	mu       sync.Mutex
+	token    string
+	pid      string // WebSocket credential, returned by the same login
+	fetched  time.Time
+	loginErr error     // last login failure, held during the cooldown below
+	cooldown time.Time // do not attempt another login before this
 }
+
+// loginCooldown throttles login attempts after a failure. The real VSS server
+// rate-limits logins hard (status 10082 "Login too frequently"), so a burst of
+// requests each triggering a fresh login would turn one failure into a
+// self-inflicted lockout. After a failed login every caller gets the same
+// cached error until the cooldown passes, then exactly one retry is allowed.
+const loginCooldown = 30 * time.Second
 
 // New builds a client. A long timeout: VSS sits behind mobile networks and the
 // device-list call over a few thousand units is not fast.
@@ -165,9 +174,16 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 	if c.token != "" && time.Since(c.fetched) < tokenTTL {
 		return c.token, nil
 	}
+	// Still cooling down from a recent login failure — hand back the same error
+	// rather than hammering the rate-limited login endpoint again.
+	if c.loginErr != nil && time.Now().Before(c.cooldown) {
+		return "", c.loginErr
+	}
 	if err := c.login(ctx); err != nil {
+		c.loginErr, c.cooldown = err, time.Now().Add(loginCooldown)
 		return "", err
 	}
+	c.loginErr = nil
 	return c.token, nil
 }
 
