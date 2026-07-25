@@ -30,6 +30,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/karlo/fms/internal/archive"
 	"github.com/karlo/fms/internal/vss"
@@ -46,14 +47,15 @@ type Handler struct {
 	bucket string
 	jobs   *jobStore
 	client *http.Client
+	pool   *pgxpool.Pool
 }
 
 // NewHandler builds the handler. bucket is where downloaded clips are kept
 // (karlo-fms-cold-storage); videos land under the "video/" prefix, beside the
 // telemetry parquet.
-func NewHandler(client *vss.Client, auth AuthFunc, bucket string) *Handler {
+func NewHandler(client *vss.Client, auth AuthFunc, bucket string, pool *pgxpool.Pool) *Handler {
 	return &Handler{
-		vss: client, auth: auth, bucket: bucket,
+		vss: client, auth: auth, bucket: bucket, pool: pool,
 		jobs:   newJobStore(),
 		client: &http.Client{Timeout: 10 * time.Minute}, // clip pulls are large + slow
 	}
@@ -66,6 +68,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/v1/dashcams/{deviceId}/live", h.gated(h.live))
 	r.Post("/v1/dashcams/{deviceId}/download", h.gated(h.startDownload))
 	r.Get("/v1/dashcams/downloads/{jobId}", h.gated(h.downloadStatus))
+	r.Get("/v1/dashcams/alarms", h.gated(h.alarms))
 }
 
 func (h *Handler) gated(next http.HandlerFunc) http.HandlerFunc {

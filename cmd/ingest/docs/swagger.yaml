@@ -1,5 +1,24 @@
 basePath: /
 definitions:
+  dashcam.AlarmDTO:
+    properties:
+      alarm_id:
+        type: string
+      code:
+        type: integer
+      device_id:
+        type: string
+      id:
+        type: integer
+      lat:
+        type: number
+      lon:
+        type: number
+      occurred_at:
+        type: string
+      speed:
+        type: number
+    type: object
   dashcam.Clip:
     properties:
       channel:
@@ -493,6 +512,37 @@ paths:
               type: string
             type: object
       summary: List a device's clips for a date, with coordinates
+      tags:
+      - dashcams
+  /v1/dashcams/alarms:
+    get:
+      description: Events received over the VSS WebSocket, id-ascending. Poll with
+        since=<last id you saw>. Tenant-agnostic; FMS maps device_id to a vehicle
+        and raises its own alert.
+      parameters:
+      - description: ingest API key
+        in: header
+        name: X-Ingest-Key
+        required: true
+        type: string
+      - description: return alarms with id greater than this (default 0)
+        in: query
+        name: since
+        type: integer
+      - description: max rows (default 200)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dashcam.AlarmDTO'
+            type: array
+      summary: Dashcam alarms since an id (for FMS to poll)
       tags:
       - dashcams
   /v1/dashcams/downloads/{jobId}:

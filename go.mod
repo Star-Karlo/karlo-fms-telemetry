@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/athena v1.59.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.105.0
 	github.com/go-chi/chi/v5 v5.3.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/mmcloughlin/geohash v0.10.0
 	github.com/parquet-go/parquet-go v0.30.1

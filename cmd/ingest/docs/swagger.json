@@ -103,6 +103,50 @@
                 }
             }
         },
+        "/v1/dashcams/alarms": {
+            "get": {
+                "description": "Events received over the VSS WebSocket, id-ascending. Poll with since=\u003clast id you saw\u003e. Tenant-agnostic; FMS maps device_id to a vehicle and raises its own alert.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "Dashcam alarms since an id (for FMS to poll)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ingest API key",
+                        "name": "X-Ingest-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "return alarms with id greater than this (default 0)",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "max rows (default 200)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dashcam.AlarmDTO"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/dashcams/downloads/{jobId}": {
             "get": {
                 "produces": [
@@ -885,6 +929,35 @@
         }
     },
     "definitions": {
+        "dashcam.AlarmDTO": {
+            "type": "object",
+            "properties": {
+                "alarm_id": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "integer"
+                },
+                "device_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "occurred_at": {
+                    "type": "string"
+                },
+                "speed": {
+                    "type": "number"
+                }
+            }
+        },
         "dashcam.Clip": {
             "type": "object",
             "properties": {

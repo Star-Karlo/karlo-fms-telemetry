@@ -112,7 +112,7 @@ func main() {
 		Password: env("VSS_PASSWORD", ""),
 	})
 	videoBucket := env("VIDEO_S3_BUCKET", env("S3_BUCKET", "karlo-fms-cold-storage"))
-	dashcam.NewHandler(vssClient, h.Authorized, videoBucket).Routes(r)
+	dashcam.NewHandler(vssClient, h.Authorized, videoBucket, pool).Routes(r)
 
 	// Coverage/terrain spatial grid: nightly rollup of signal + ruggedness, plus
 	// the read endpoint. Seeds the hot window on startup, then rolls up daily.
@@ -127,6 +127,10 @@ func main() {
 	vd := ingest.NewVehicleDay(pool)
 	vd.Route(r)
 	go vd.RunRollup(ctx, retentionDays)
+
+	// Live VSS alarm feed: one WebSocket to the camera platform, persisting
+	// events for FMS to poll. No-op when VSS is not configured.
+	go dashcam.NewAlarmRunner(vssClient, pool).Run(ctx)
 
 	log.Printf("ingest service on %s  (swagger: http://localhost%s/swagger/index.html)", addr, addr)
 	log.Fatal(http.ListenAndServe(addr, r))
