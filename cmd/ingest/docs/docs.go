@@ -1223,9 +1223,6 @@ const docTemplate = `{
                     "description": "1 accel, 2 brake, 3 corner",
                     "type": "integer"
                 },
-                "gforce": {
-                    "type": "number"
-                },
                 "id": {
                     "type": "integer"
                 },
@@ -1242,6 +1239,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "speed": {
+                    "type": "number"
+                },
+                "value": {
+                    "description": "Value is the raw Teltonika Green Driving Value (device units). FMS converts\nit to g for severity — it is NOT a g here.",
                     "type": "number"
                 }
             }

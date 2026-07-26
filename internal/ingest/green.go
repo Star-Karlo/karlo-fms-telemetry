@@ -23,19 +23,23 @@ import (
 // AVL id or a named alias) so a naming change upstream does not silently drop
 // events; the exact key is confirmed against the first real reading.
 
-// Candidate io keys, in priority order, for each Green Driving field.
+// Candidate io keys, in priority order, for each Green Driving field. The
+// human-readable names are what our upstream actually sends (confirmed from a
+// real reading); the numeric AVL ids are kept as a fallback.
 var (
-	greenTypeKeys     = []string{"253", "green_driving_type", "greenDrivingType", "gd_type"}
-	greenValueKeys    = []string{"254", "green_driving_value", "greenDrivingValue", "gd_value"}
-	greenDurationKeys = []string{"243", "green_driving_duration", "greenDrivingEventDuration"}
+	greenTypeKeys     = []string{"Green driving type", "253", "green_driving_type", "greenDrivingType"}
+	greenValueKeys    = []string{"Green Driving Value", "254", "green_driving_value", "greenDrivingValue"}
+	greenDurationKeys = []string{"Green driving event duration", "243", "green_driving_duration"}
 )
 
 // GreenEvent is one stored Green Driving event as the poll endpoint returns it.
 type GreenEvent struct {
-	ID         int64    `json:"id"`
-	IMEI       string   `json:"imei"`
-	EventType  int      `json:"event_type"` // 1 accel, 2 brake, 3 corner
-	Gforce     *float64 `json:"gforce"`
+	ID        int64  `json:"id"`
+	IMEI      string `json:"imei"`
+	EventType int    `json:"event_type"` // 1 accel, 2 brake, 3 corner
+	// Value is the raw Teltonika Green Driving Value (device units). FMS converts
+	// it to g for severity — it is NOT a g here.
+	Value      *float64 `json:"value"`
 	DurationMs *int     `json:"duration_ms"`
 	OccurredAt string   `json:"occurred_at"`
 	Lat        *float64 `json:"lat"`
@@ -94,7 +98,7 @@ func (g *GreenStore) Extract(ctx context.Context, readings []Reading) {
 		}
 		ev := GreenEvent{IMEI: rd.IMEI, EventType: typ, OccurredAt: rd.GPSTime.Format(time.RFC3339)}
 		if v, ok := firstNum(rd.Metadata, greenValueKeys); ok && v > 0 {
-			ev.Gforce = &v
+			ev.Value = &v
 		}
 		if d, ok := firstNum(rd.Metadata, greenDurationKeys); ok {
 			dm := int(d)
@@ -115,10 +119,10 @@ func (g *GreenStore) store(ctx context.Context, rd Reading, ev GreenEvent) {
 	}
 	_, err := g.pool.Exec(ctx, `
 INSERT INTO green_driving_events
-  (imei, event_type, gforce, duration_ms, occurred_at, lat, lon, speed, raw)
+  (imei, event_type, value, duration_ms, occurred_at, lat, lon, speed, raw)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 ON CONFLICT (imei, occurred_at, event_type) DO NOTHING`,
-		ev.IMEI, ev.EventType, ev.Gforce, ev.DurationMs, rd.GPSTime, lat, lon, speed, json.RawMessage(raw))
+		ev.IMEI, ev.EventType, ev.Value, ev.DurationMs, rd.GPSTime, lat, lon, speed, json.RawMessage(raw))
 	if err != nil {
 		log.Printf("green driving: store %s type %d: %v", ev.IMEI, ev.EventType, err)
 	}
@@ -142,7 +146,7 @@ func (g *GreenStore) handleEvents(w http.ResponseWriter, r *http.Request) {
 		limit = v
 	}
 	rows, err := g.pool.Query(r.Context(), `
-SELECT id, imei, event_type, gforce, duration_ms,
+SELECT id, imei, event_type, value, duration_ms,
        to_char(occurred_at, 'YYYY-MM-DD"T"HH24:MI:SSOF:00'), lat, lon, speed
 FROM green_driving_events WHERE id > $1 ORDER BY id LIMIT $2`, since, limit)
 	if err != nil {
@@ -153,7 +157,7 @@ FROM green_driving_events WHERE id > $1 ORDER BY id LIMIT $2`, since, limit)
 	out := []GreenEvent{}
 	for rows.Next() {
 		var e GreenEvent
-		if err := rows.Scan(&e.ID, &e.IMEI, &e.EventType, &e.Gforce, &e.DurationMs,
+		if err := rows.Scan(&e.ID, &e.IMEI, &e.EventType, &e.Value, &e.DurationMs,
 			&e.OccurredAt, &e.Lat, &e.Lon, &e.Speed); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "scan green events failed"})
 			return

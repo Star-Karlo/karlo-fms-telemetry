@@ -177,8 +177,6 @@ definitions:
       event_type:
         description: 1 accel, 2 brake, 3 corner
         type: integer
-      gforce:
-        type: number
       id:
         type: integer
       imei:
@@ -190,6 +188,11 @@ definitions:
       occurred_at:
         type: string
       speed:
+        type: number
+      value:
+        description: |-
+          Value is the raw Teltonika Green Driving Value (device units). FMS converts
+          it to g for severity — it is NOT a g here.
         type: number
     type: object
   ingest.HistoryPage:

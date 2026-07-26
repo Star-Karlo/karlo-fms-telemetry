@@ -17,10 +17,10 @@ CREATE TABLE IF NOT EXISTS green_driving_events (
   -- Teltonika Green Driving type: 1 harsh acceleration, 2 harsh braking,
   -- 3 harsh cornering (AVL 253).
   event_type  int NOT NULL,
-  -- Event magnitude from AVL 254. Unit depends on device config (often g or a
-  -- scaled g); FMS treats it as g where it looks like g, and the raw payload is
-  -- kept so the scale can be confirmed against a real event.
-  gforce      double precision,
+  -- Raw Teltonika Green Driving Value (AVL 254), device units. For the
+  -- accelerometer scenario this is g×100 (e.g. 45 = 0.45 g); FMS converts it to
+  -- g. Kept raw here; the full payload is stored so the scale can be confirmed.
+  value       double precision,
   duration_ms int,               -- AVL 243, event duration
   occurred_at timestamptz NOT NULL,
   lat         double precision,
