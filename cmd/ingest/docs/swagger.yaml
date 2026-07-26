@@ -170,6 +170,28 @@ definitions:
         description: fix time of that position
         type: string
     type: object
+  ingest.GreenEvent:
+    properties:
+      duration_ms:
+        type: integer
+      event_type:
+        description: 1 accel, 2 brake, 3 corner
+        type: integer
+      gforce:
+        type: number
+      id:
+        type: integer
+      imei:
+        type: string
+      lat:
+        type: number
+      lon:
+        type: number
+      occurred_at:
+        type: string
+      speed:
+        type: number
+    type: object
   ingest.HistoryPage:
     properties:
       next_cursor:
@@ -584,6 +606,37 @@ paths:
       summary: Poll a download job
       tags:
       - dashcams
+  /v1/driving-events:
+    get:
+      description: Harsh accel/brake/corner events from Teltonika trackers, id-ascending.
+        Poll with since=<last id>. Tenant-agnostic; FMS maps IMEI to a vehicle and
+        scores it.
+      parameters:
+      - description: ingest API key
+        in: header
+        name: X-Ingest-Key
+        required: true
+        type: string
+      - description: return events with id greater than this (default 0)
+        in: query
+        name: since
+        type: integer
+      - description: max rows (default 200)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ingest.GreenEvent'
+            type: array
+      summary: Tracker Green Driving events since an id (for FMS to poll)
+      tags:
+      - driving
   /v1/geofence/check:
     get:
       description: Distance of one truck (imei), one mobile driver (driver), or an

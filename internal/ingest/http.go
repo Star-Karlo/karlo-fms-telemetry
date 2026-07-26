@@ -22,12 +22,13 @@ type Handler struct {
 	w      *Writer
 	r      *Reader
 	mob    *MobileStore // driver-keyed telemetry (phone app); see mobile.go
+	green  *GreenStore  // tracker Green Driving events; see green.go
 	apiKey string       // legacy shared secret; still accepted when set
 	keys   *KeyStore    // revocable per-sender keys (ingest_key table)
 }
 
-func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, mob *MobileStore, apiKey string, keys *KeyStore) *Handler {
-	return &Handler{geo: geo, w: w, r: reader, mob: mob, apiKey: apiKey, keys: keys}
+func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, mob *MobileStore, green *GreenStore, apiKey string, keys *KeyStore) *Handler {
+	return &Handler{geo: geo, w: w, r: reader, mob: mob, green: green, apiKey: apiKey, keys: keys}
 }
 
 // authorized reports whether the request may write telemetry. A request passes
@@ -62,6 +63,10 @@ func (h *Handler) authorized(ctx context.Context, presented string) bool {
 func (h *Handler) Routes(r chi.Router) {
 	// write
 	r.Post("/v1/ingest", h.handleIngest)
+	// driving-behaviour events (Teltonika Green Driving), for FMS to poll
+	if h.green != nil {
+		r.Get("/v1/driving-events", h.green.handleEvents)
+	}
 	// read
 	r.Get("/v1/live", h.handleLiveAll)
 	r.Get("/v1/live/{imei}", h.handleLiveOne)
@@ -133,6 +138,12 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if err := h.w.WriteBatch(ctx, rows); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "write failed"})
 		return
+	}
+
+	// Harvest any Teltonika Green Driving events riding in the same batch. Runs
+	// after the telemetry is safely written and never affects the ingest result.
+	if h.green != nil {
+		h.green.Extract(ctx, readings)
 	}
 
 	writeJSON(w, http.StatusAccepted, map[string]any{"stored": len(rows)})

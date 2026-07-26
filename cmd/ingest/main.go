@@ -92,7 +92,7 @@ func main() {
 	}
 	mob := ingest.NewMobileStore(pool, mobileCold, retentionDays)
 
-	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), mob, apiKey, keys)
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), mob, ingest.NewGreenStore(pool), apiKey, keys)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)

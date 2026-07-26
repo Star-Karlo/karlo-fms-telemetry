@@ -356,6 +356,50 @@
                 }
             }
         },
+        "/v1/driving-events": {
+            "get": {
+                "description": "Harsh accel/brake/corner events from Teltonika trackers, id-ascending. Poll with since=\u003clast id\u003e. Tenant-agnostic; FMS maps IMEI to a vehicle and scores it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "driving"
+                ],
+                "summary": "Tracker Green Driving events since an id (for FMS to poll)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ingest API key",
+                        "name": "X-Ingest-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "return events with id greater than this (default 0)",
+                        "name": "since",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "max rows (default 200)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ingest.GreenEvent"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/geofence/check": {
             "get": {
                 "description": "Distance of one truck (imei), one mobile driver (driver), or an arbitrary point (lat/lon) to a center. Pass both imei and driver to use whichever has the fresher live fix. Returns the same fields as one batch result.",
@@ -1159,6 +1203,39 @@
                 "time": {
                     "description": "fix time of that position",
                     "type": "string"
+                }
+            }
+        },
+        "ingest.GreenEvent": {
+            "type": "object",
+            "properties": {
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "event_type": {
+                    "description": "1 accel, 2 brake, 3 corner",
+                    "type": "integer"
+                },
+                "gforce": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "imei": {
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "occurred_at": {
+                    "type": "string"
+                },
+                "speed": {
+                    "type": "number"
                 }
             }
         },
