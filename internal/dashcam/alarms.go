@@ -64,10 +64,10 @@ func (r *AlarmRunner) store(a vss.Alarm) {
 	defer cancel()
 	raw := json.RawMessage(a.Raw)
 	_, err := r.pool.Exec(ctx, `
-INSERT INTO dashcam_alarms (device_id, alarm_id, code, occurred_at, lat, lon, speed, raw)
-VALUES ($1, NULLIF($2,''), $3, $4, $5, $6, $7, $8)
+INSERT INTO dashcam_alarms (device_id, alarm_id, code, occurred_at, lat, lon, speed, gforce, raw)
+VALUES ($1, NULLIF($2,''), $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (alarm_id) WHERE alarm_id IS NOT NULL DO NOTHING`,
-		a.DeviceID, a.AlarmID, a.Code, a.OccurredAt, a.Lat, a.Lon, a.Speed, raw)
+		a.DeviceID, a.AlarmID, a.Code, a.OccurredAt, a.Lat, a.Lon, a.Speed, a.Gforce, raw)
 	if err != nil {
 		log.Printf("dashcam alarms: store %s/%s: %v", a.DeviceID, a.AlarmID, err)
 	}
@@ -83,6 +83,11 @@ type AlarmDTO struct {
 	Lat        *float64 `json:"lat"`
 	Lon        *float64 `json:"lon"`
 	Speed      *float64 `json:"speed"`
+	// Gforce is the reported acceleration magnitude for a driving-behaviour
+	// event, or null. Raw is the original VSS payload, exposed so FMS can
+	// confirm and back-fill the exact G field once a real event is seen.
+	Gforce *float64        `json:"gforce"`
+	Raw    json.RawMessage `json:"raw,omitempty" swaggertype:"object"`
 }
 
 // alarms godoc
@@ -104,7 +109,7 @@ func (h *Handler) alarms(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.pool.Query(r.Context(), `
 SELECT id, device_id, coalesce(alarm_id,''), code,
-       to_char(occurred_at, 'YYYY-MM-DD"T"HH24:MI:SSOF:00'), lat, lon, speed
+       to_char(occurred_at, 'YYYY-MM-DD"T"HH24:MI:SSOF:00'), lat, lon, speed, gforce, raw
 FROM dashcam_alarms WHERE id > $1 ORDER BY id LIMIT $2`, since, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query alarms failed"})
@@ -114,7 +119,7 @@ FROM dashcam_alarms WHERE id > $1 ORDER BY id LIMIT $2`, since, limit)
 	out := []AlarmDTO{}
 	for rows.Next() {
 		var a AlarmDTO
-		if err := rows.Scan(&a.ID, &a.DeviceID, &a.AlarmID, &a.Code, &a.OccurredAt, &a.Lat, &a.Lon, &a.Speed); err != nil {
+		if err := rows.Scan(&a.ID, &a.DeviceID, &a.AlarmID, &a.Code, &a.OccurredAt, &a.Lat, &a.Lon, &a.Speed, &a.Gforce, &a.Raw); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "scan alarms failed"})
 			return
 		}

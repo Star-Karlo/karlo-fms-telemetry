@@ -948,6 +948,10 @@ const docTemplate = `{
                 "device_id": {
                     "type": "string"
                 },
+                "gforce": {
+                    "description": "Gforce is the reported acceleration magnitude for a driving-behaviour\nevent, or null. Raw is the original VSS payload, exposed so FMS can\nconfirm and back-fill the exact G field once a real event is seen.",
+                    "type": "number"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -959,6 +963,9 @@ const docTemplate = `{
                 },
                 "occurred_at": {
                     "type": "string"
+                },
+                "raw": {
+                    "type": "object"
                 },
                 "speed": {
                     "type": "number"

@@ -32,7 +32,15 @@ type Alarm struct {
 	OccurredAt time.Time // device time of the event
 	Lat, Lon   *float64  // where it fired, when the push carried a location
 	Speed      *float64
-	Raw        string // the original payload, kept for anything we did not model
+	// Gforce is the peak acceleration magnitude the device reported for a
+	// driving-behaviour event (harsh brake/accel/turn), when the push carried
+	// one. Best-effort: the vendor field is read from the event detail by a
+	// candidate-key scan (see parseGforce) and its UNIT is unconfirmed until a
+	// real event is seen — FMS treats it as g only where it looks like g. Null
+	// for events that do not report acceleration. The raw payload is always kept
+	// so the exact field can be confirmed and back-filled later.
+	Gforce *float64
+	Raw    string // the original payload, kept for anything we did not model
 }
 
 // wsFrame is the envelope for a client->server instruction.
@@ -161,8 +169,9 @@ func parseAlarm(data []byte) (Alarm, bool) {
 			DeviceID string `json:"deviceID"`
 			AlarmID  string `json:"alarmID"`
 			Payload  struct {
-				DTU string `json:"dtu"`
-				EC  any    `json:"ec"`
+				DTU string          `json:"dtu"`
+				EC  any             `json:"ec"`
+				Det json.RawMessage `json:"det"` // event detail; may carry the G magnitude
 			} `json:"payload"`
 			Location struct {
 				Lat   any `json:"latitude"`
@@ -189,7 +198,44 @@ func parseAlarm(data []byte) (Alarm, bool) {
 	if spd, ok := toFloat(p.Location.Speed); ok {
 		a.Speed = &spd
 	}
+	if g, ok := parseGforce(p.Payload.Det); ok {
+		a.Gforce = &g
+	}
 	return a, true
+}
+
+// gforceKeys are the detail-object keys, in priority order, that a Gtrack/Howen
+// driving-behaviour event might carry the acceleration magnitude under. The
+// vendor doc does not pin one down, so we scan candidates and take the first
+// that parses to a plausible number. This is deliberately conservative — a
+// missed value stays null and the event still classifies by its code — and the
+// exact key is confirmed against the raw payload of the first real event.
+var gforceKeys = []string{
+	"g", "gv", "gval", "gvalue", "gForce", "gforce",
+	"acc", "accel", "acceleration", "intensity", "value", "val", "lv", "level",
+}
+
+// parseGforce pulls a best-effort acceleration magnitude out of an event's
+// detail object. Returns false when the detail is absent or carries no
+// recognisable numeric field.
+func parseGforce(det json.RawMessage) (float64, bool) {
+	if len(det) == 0 {
+		return 0, false
+	}
+	var m map[string]any
+	if err := json.Unmarshal(det, &m); err != nil {
+		return 0, false
+	}
+	for _, k := range gforceKeys {
+		v, ok := m[k]
+		if !ok {
+			continue
+		}
+		if f, ok := toFloat(v); ok && f > 0 {
+			return f, true
+		}
+	}
+	return 0, false
 }
 
 func toInt(v any) int {

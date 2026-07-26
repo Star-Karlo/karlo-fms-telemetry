@@ -69,3 +69,24 @@ func TestWSURLDerivation(t *testing.T) {
 		}
 	}
 }
+
+func TestParseGforce(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	// A harsh-brake push whose detail carries a G value under one of the
+	// candidate keys is extracted; a push without one stays nil.
+	withG := `{"action":"80004","payload":{"deviceID":"d","alarmID":"a1",
+	  "payload":{"det":{"ch":"1","g":"0.62"},"dtu":"2026-01-01 10:00:00","ec":"25"}}}`
+	a, ok := parseAlarm([]byte(withG))
+	if !ok {
+		t.Fatal("harsh-brake push must parse")
+	}
+	if a.Gforce == nil || *a.Gforce != *f(0.62) {
+		t.Errorf("gforce = %v, want 0.62", a.Gforce)
+	}
+	noG := `{"action":"80004","payload":{"deviceID":"d","alarmID":"a2",
+	  "payload":{"det":{"ch":"1"},"dtu":"2026-01-01 10:00:00","ec":"25"}}}`
+	a2, _ := parseAlarm([]byte(noG))
+	if a2.Gforce != nil {
+		t.Errorf("gforce should be nil when no candidate key present, got %v", *a2.Gforce)
+	}
+}
