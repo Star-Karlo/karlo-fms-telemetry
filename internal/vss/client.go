@@ -493,28 +493,27 @@ func (c *Client) SearchAlarmEvidence(ctx context.Context, deviceID string, from,
 	if err != nil {
 		return nil, err
 	}
-	var out struct {
-		Data []struct {
-			DeviceID  string `json:"deviceID"`
-			AlarmGuid string `json:"alarmGuid"`
-			AlarmType any    `json:"alarmType"`
-			AlarmGps  string `json:"alarmGps"`
-			AlarmTime string `json:"alarmTime"`
-			AlarmFile []struct {
-				FileType      any    `json:"fileType"`
-				Channel       any    `json:"channel"`
-				FileStartTime string `json:"fileStartTime"`
-				FileStopTime  string `json:"fileStopTime"`
-				DownURL       string `json:"downUrl"`
-				Thumbnail     string `json:"fileThumbnail"`
-			} `json:"alarmFile"`
-		} `json:"data"`
+	// post() already unwrapped the envelope, so `data` is the alarm array itself.
+	var rows []struct {
+		DeviceID  string `json:"deviceID"`
+		AlarmGuid string `json:"alarmGuid"`
+		AlarmType any    `json:"alarmType"`
+		AlarmGps  string `json:"alarmGps"`
+		AlarmTime string `json:"alarmTime"`
+		AlarmFile []struct {
+			FileType      any    `json:"fileType"`
+			Channel       any    `json:"channel"`
+			FileStartTime string `json:"fileStartTime"`
+			FileStopTime  string `json:"fileStopTime"`
+			DownURL       string `json:"downUrl"`
+			Thumbnail     string `json:"fileThumbnail"`
+		} `json:"alarmFile"`
 	}
-	if err := json.Unmarshal(data, &out); err != nil {
+	if err := json.Unmarshal(data, &rows); err != nil {
 		return nil, fmt.Errorf("vss alarm evidence: decode: %w", err)
 	}
-	evs := make([]AlarmEvidence, 0, len(out.Data))
-	for _, d := range out.Data {
+	evs := make([]AlarmEvidence, 0, len(rows))
+	for _, d := range rows {
 		e := AlarmEvidence{DeviceID: d.DeviceID, AlarmGuid: d.AlarmGuid, AlarmType: toInt(d.AlarmType), AlarmTime: d.AlarmTime}
 		if lon, lat, ok := parseLonLat(d.AlarmGps); ok {
 			e.Lat, e.Lon = &lat, &lon
