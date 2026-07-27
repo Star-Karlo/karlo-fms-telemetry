@@ -29,7 +29,10 @@ func NewEvidenceRunner(client *vss.Client, pool *pgxpool.Pool) *EvidenceRunner {
 		vss:    client,
 		pool:   pool,
 		every:  90 * time.Second,
-		window: 2 * time.Hour, // generous re-fetch; dedup on alarmGuid makes it idempotent
+		// Wide look-back: catches infrequent events and absorbs any timezone skew
+		// between our query window and the server's clock. Dedup on alarmGuid
+		// makes the repeated overlap idempotent.
+		window: 24 * time.Hour,
 	}
 }
 
@@ -62,8 +65,9 @@ func (r *EvidenceRunner) tick(ctx context.Context) {
 		log.Printf("evidence poller: list devices: %v", err)
 		return
 	}
-	to := time.Now().In(wib)
-	from := to.Add(-r.window)
+	now := time.Now().In(wib)
+	to := now.Add(2 * time.Hour) // small forward buffer for any clock skew
+	from := now.Add(-r.window)
 	for _, d := range devices {
 		evs, err := r.vss.SearchAlarmEvidence(ctx, d.DeviceNo, from, to, "")
 		if err != nil {
