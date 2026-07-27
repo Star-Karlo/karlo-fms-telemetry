@@ -10,6 +10,16 @@ phases:
       - REGISTRY=$(echo "$ECR_REPO" | cut -d/ -f1)
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
       - IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION:-latest}
+      # Apply pending DB migrations before the image ships (ingest build only —
+      # it owns the schema). Tracked in schema_migrations so only new files run;
+      # additive/expand-style, so applying ahead of the deploy is safe. Runs via
+      # a postgres image for a reliable psql, no host install to break the build.
+      - |
+        if [ "$SERVICE" = "ingest" ]; then
+          echo ">> applying DB migrations (Timescale)"
+          DB_URL="$(aws ssm get-parameter --name /karlo-fms/database-url --with-decryption --region "$AWS_DEFAULT_REGION" --query 'Parameter.Value' --output text)"
+          docker run --rm -e DB_URL="$DB_URL" -v "$PWD:/work" -w /work postgres:16 bash scripts/ci-migrate.sh
+        fi
   build:
     commands:
       - docker build --build-arg SERVICE="$SERVICE" -t "$ECR_REPO:$IMAGE_TAG" -t "$ECR_REPO:latest" .
