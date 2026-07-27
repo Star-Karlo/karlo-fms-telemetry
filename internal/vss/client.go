@@ -454,6 +454,98 @@ func (c *Client) SearchVideos(ctx context.Context, deviceID string, channels []i
 	return out.Files, nil
 }
 
+// ---- alarm evidence (§3.12) ------------------------------------------------
+
+// AlarmEvidence is one device alarm with its evidence files, from the evidence
+// search endpoint. This is the POLLED alternative to the push WebSocket: FMS
+// learns of DMS/ADAS/collision events this way and gets the clip + snapshot to
+// show and download.
+type AlarmEvidence struct {
+	DeviceID  string
+	AlarmGuid string   // unique event id — the dedup key
+	AlarmType int      // event type; see the vendor alarm-of-event table
+	Lat, Lon  *float64 // from alarmGps ("lon,lat"), when present
+	AlarmTime string   // device time "YYYY-MM-DD HH:MM:SS"
+	Files     []EvidenceFile
+}
+
+// EvidenceFile is one video/picture attached to an alarm, with a direct URL.
+type EvidenceFile struct {
+	FileType  int // 1 ordinary video, 2 alarm video, 3 normal picture, 4 alarm picture
+	Channel   int // 1-based; 0 when unspecified
+	StartTime string
+	StopTime  string
+	DownURL   string // direct, token-bearing download URL
+	Thumbnail string
+}
+
+// SearchAlarmEvidence lists a device's alarms in [from,to], each with its
+// evidence files (§3.12). alarmType "" returns all types.
+func (c *Client) SearchAlarmEvidence(ctx context.Context, deviceID string, from, to time.Time, alarmType string) ([]AlarmEvidence, error) {
+	const layout = "2006-01-02 15:04:05"
+	data, err := c.post(ctx, "/vss/record/evidenceToRetrieve.action", map[string]any{
+		"conditionName": deviceID,
+		"startTime":     from.Format(layout),
+		"endTime":       to.Format(layout),
+		"alarmType":     alarmType,
+		"scheme":        "https",
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Data []struct {
+			DeviceID  string `json:"deviceID"`
+			AlarmGuid string `json:"alarmGuid"`
+			AlarmType any    `json:"alarmType"`
+			AlarmGps  string `json:"alarmGps"`
+			AlarmTime string `json:"alarmTime"`
+			AlarmFile []struct {
+				FileType      any    `json:"fileType"`
+				Channel       any    `json:"channel"`
+				FileStartTime string `json:"fileStartTime"`
+				FileStopTime  string `json:"fileStopTime"`
+				DownURL       string `json:"downUrl"`
+				Thumbnail     string `json:"fileThumbnail"`
+			} `json:"alarmFile"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, fmt.Errorf("vss alarm evidence: decode: %w", err)
+	}
+	evs := make([]AlarmEvidence, 0, len(out.Data))
+	for _, d := range out.Data {
+		e := AlarmEvidence{DeviceID: d.DeviceID, AlarmGuid: d.AlarmGuid, AlarmType: toInt(d.AlarmType), AlarmTime: d.AlarmTime}
+		if lon, lat, ok := parseLonLat(d.AlarmGps); ok {
+			e.Lat, e.Lon = &lat, &lon
+		}
+		for _, f := range d.AlarmFile {
+			e.Files = append(e.Files, EvidenceFile{
+				FileType: toInt(f.FileType), Channel: toInt(f.Channel),
+				StartTime: f.FileStartTime, StopTime: f.FileStopTime,
+				DownURL: f.DownURL, Thumbnail: f.Thumbnail,
+			})
+		}
+		evs = append(evs, e)
+	}
+	return evs, nil
+}
+
+// parseLonLat parses VSS's "lon,lat" alarmGps string (longitude first). "0,0"
+// and unparseable strings return ok=false so a fixless alarm is not plotted.
+func parseLonLat(s string) (lon, lat float64, ok bool) {
+	parts := strings.Split(strings.TrimSpace(s), ",")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	lo, e1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	la, e2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if e1 != nil || e2 != nil || (lo == 0 && la == 0) {
+		return 0, 0, false
+	}
+	return lo, la, true
+}
+
 // ---- GPS track (§3.7), for deriving a clip's coordinate ---------------------
 
 // TrackPoint is one GPS fix the device reported.

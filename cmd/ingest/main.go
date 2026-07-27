@@ -128,9 +128,11 @@ func main() {
 	vd.Route(r)
 	go vd.RunRollup(ctx, retentionDays)
 
-	// Live VSS alarm feed: one WebSocket to the camera platform, persisting
-	// events for FMS to poll. No-op when VSS is not configured.
-	go dashcam.NewAlarmRunner(vssClient, pool).Run(ctx)
+	// VSS alarm feed: poll the evidence endpoint for recent events per device,
+	// persisting each (with its clip + snapshot URLs) for FMS to read. Replaces
+	// the push WebSocket, which the vendor server rejects at the handshake.
+	// No-op when VSS is not configured.
+	go dashcam.NewEvidenceRunner(vssClient, pool).Run(ctx)
 
 	log.Printf("ingest service on %s  (swagger: http://localhost%s/swagger/index.html)", addr, addr)
 	log.Fatal(http.ListenAndServe(addr, r))
