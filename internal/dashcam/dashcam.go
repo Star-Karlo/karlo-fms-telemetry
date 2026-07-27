@@ -116,13 +116,15 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type dev struct {
-		DeviceID     string `json:"device_id"`
-		DeviceName   string `json:"device_name"`
-		DeviceType   string `json:"device_type"`
-		Channels     int    `json:"channels"`
-		ChannelNames string `json:"channel_names"`
-		Online       bool   `json:"online"`
-		AccessMode   int    `json:"access_mode"`
+		DeviceID     string   `json:"device_id"`
+		DeviceName   string   `json:"device_name"`
+		DeviceType   string   `json:"device_type"`
+		Channels     int      `json:"channels"`
+		ChannelNames string   `json:"channel_names"`
+		Online       bool     `json:"online"`
+		AccessMode   int      `json:"access_mode"`
+		Lat          *float64 `json:"lat"`
+		Lon          *float64 `json:"lon"`
 	}
 	out := make([]dev, 0, len(devices))
 	for _, d := range devices {
@@ -130,6 +132,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 			DeviceID: d.DeviceNo, DeviceName: d.DeviceName, DeviceType: d.DeviceType,
 			Channels: d.VideoChannels, ChannelNames: d.ChannelName,
 			Online: d.Online(), AccessMode: d.AccessMode,
+			Lat: coordToFloat(d.Latitude), Lon: coordToFloat(d.Longitude),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -382,4 +385,27 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// coordToFloat coerces a VSS device coordinate (sent as a string or number) to a
+// float pointer. VSS reports "0"/0 when it has no fix; those and unparseable
+// values become nil so a device with no GPS is not plotted at null island.
+func coordToFloat(v any) *float64 {
+	var f float64
+	switch t := v.(type) {
+	case float64:
+		f = t
+	case string:
+		p, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
+		if err != nil {
+			return nil
+		}
+		f = p
+	default:
+		return nil
+	}
+	if f == 0 {
+		return nil
+	}
+	return &f
 }
