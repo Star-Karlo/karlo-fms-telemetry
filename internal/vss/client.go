@@ -47,6 +47,11 @@ const (
 	statusNotLoggedIn   = 10004
 	statusTokenError    = 10023
 	statusDeviceOffline = 10043
+	// statusTooFrequent is the per-API throttle ("Requests too frequent, please
+	// try again later"). Distinct from the login throttle (10082): it fires on a
+	// normal call — the GPS-track lookup is the one users hit — so a short backoff
+	// and retry turns a surfaced 502 into a slightly slower success.
+	statusTooFrequent = 10129
 )
 
 // tokenTTL is deliberately shorter than the vendor's 30-minute idle expiry.
@@ -248,16 +253,34 @@ func (c *Client) post(ctx context.Context, path string, params map[string]any) (
 		}
 		return c.postRaw(ctx, path, body)
 	}
-	data, err := attempt()
-	var apiErr *APIError
-	if err != nil && asAPIError(err, &apiErr) &&
-		(apiErr.Status == statusNotLoggedIn || apiErr.Status == statusTokenError) {
-		// The token aged out between calls. One retry, after which a repeat
-		// failure is real and surfaces.
-		c.invalidate()
-		return attempt()
+	// One refresh-and-retry when the token aged out between calls.
+	withTokenRetry := func() (json.RawMessage, error) {
+		data, err := attempt()
+		var apiErr *APIError
+		if err != nil && asAPIError(err, &apiErr) &&
+			(apiErr.Status == statusNotLoggedIn || apiErr.Status == statusTokenError) {
+			c.invalidate()
+			return attempt()
+		}
+		return data, err
 	}
-	return data, err
+	// Bounded backoff on the vendor's per-API throttle. A history reload or a
+	// quick date change can fire the GPS-track call fast enough to trip 10129;
+	// waiting a beat and retrying is far better than surfacing "unreachable".
+	const maxRateRetries = 3
+	for i := 0; ; i++ {
+		data, err := withTokenRetry()
+		var apiErr *APIError
+		if err != nil && asAPIError(err, &apiErr) && apiErr.Status == statusTooFrequent && i < maxRateRetries {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(i+1) * 800 * time.Millisecond):
+			}
+			continue
+		}
+		return data, err
+	}
 }
 
 func asAPIError(err error, target **APIError) bool {
