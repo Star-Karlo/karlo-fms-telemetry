@@ -272,11 +272,17 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 		h.jobs.set(job.ID, "failed", "", err.Error())
 		return
 	}
-	// Poll VSS until the file is ready on its server.
-	deadline := time.Now().Add(8 * time.Minute)
+	// Poll VSS until the file is ready on its server, RESUMING the transfer when
+	// the device drops it part-way. Over cellular an abnormal stop at ~90% is
+	// common; the vendor's guidance (§3.15.2) is to continue the task, not start
+	// over — restarting just hits the same blip and is why a plain "Retry" kept
+	// failing. A bounded resume count stops a hopeless link from looping forever.
+	deadline := time.Now().Add(10 * time.Minute)
+	const maxResumes = 6
+	resumes := 0
 	for {
 		if time.Now().After(deadline) {
-			h.jobs.set(job.ID, "failed", "", "timed out waiting for VSS to prepare the clip")
+			h.jobs.set(job.ID, "failed", "", "timed out preparing the clip — retry when the dashcam has stronger signal")
 			return
 		}
 		time.Sleep(4 * time.Second)
@@ -285,13 +291,24 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 			h.jobs.set(job.ID, "failed", "", perr.Error())
 			return
 		}
-		if p.Failed() {
-			h.jobs.set(job.ID, "failed", "", p.Reason())
-			return
-		}
 		if p.Done() {
 			break
 		}
+		if p.Terminal() { // -7 no data / -8 offline: resuming can't help
+			h.jobs.set(job.ID, "failed", "", p.Reason())
+			return
+		}
+		if p.Resumable() { // -1 paused / -9 abnormal stop: continue from where it stopped
+			if resumes >= maxResumes {
+				h.jobs.set(job.ID, "failed", "", fmt.Sprintf("the dashcam kept dropping the transfer (stopped at %s%%) — retry when it has stronger signal", p.Progress))
+				return
+			}
+			resumes++
+			if rerr := h.vss.ResumeDownload(ctx, task.TaskID, task.ResWebPath); rerr != nil {
+				log.Printf("dashcam: resume job %s: %v", job.ID, rerr)
+			}
+		}
+		// otherwise 0/1 (not started / downloading) — keep waiting
 	}
 
 	// Fetch the finished file from the VSS file server, then push to S3. A temp

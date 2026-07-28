@@ -666,21 +666,43 @@ func (p DownloadProgress) Failed() bool {
 	return p.DownState == -7 || p.DownState == -8 || p.DownState == -9
 }
 
-// Reason turns the vendor's numeric downState into a message a dispatcher can
-// act on. Pulling a clip is a LIVE command to the dashcam, so "device offline"
-// is the common one: the truck's camera must be powered on and connected for
-// VSS to fetch the file off its SD card.
+// Terminal reports a failure that resuming cannot fix: the clip is not on the
+// device (-7) or the device is offline (-8).
+func (p DownloadProgress) Terminal() bool { return p.DownState == -7 || p.DownState == -8 }
+
+// Resumable reports a transfer that stopped part-way but can be CONTINUED — a
+// pause (-1) or an abnormal stop (-9). Over cellular this is the common case: a
+// signal blip drops the pull at, say, 90%, and the vendor's guidance is to
+// resume the task rather than start over (§3.15.2: "when the status is 0/-1/-9
+// the user can choose to continue downloading").
+func (p DownloadProgress) Resumable() bool { return p.DownState == -1 || p.DownState == -9 }
+
+// Reason turns a TERMINAL downState into a message a dispatcher can act on.
+// Pulling a clip is a LIVE command to the dashcam, so "device offline" is the
+// common one: the truck's camera must be powered on and connected for VSS to
+// fetch the file off its SD card.
 func (p DownloadProgress) Reason() string {
 	switch p.DownState {
 	case -7:
 		return "clip not found on the SD card — it may have been overwritten"
 	case -8:
 		return "dashcam is offline — power the camera on and retry"
-	case -9:
-		return "the dashcam failed to prepare the clip — retry"
 	default:
 		return fmt.Sprintf("dashcam download failed (state %d)", p.DownState)
 	}
+}
+
+// ResumeDownload continues a paused / abnormally-stopped web-download task
+// (taskManagement action 1), so a transfer that dropped mid-way finishes from
+// where it stopped instead of restarting.
+func (c *Client) ResumeDownload(ctx context.Context, taskID, resWebPath string) error {
+	_, err := c.post(ctx, "/vss/webdownrecord/taskManagement.action", map[string]any{
+		"taskId":     taskID,
+		"action":     1, // resume
+		"resWebPath": resWebPath,
+		"username":   c.cfg.Username,
+	})
+	return err
 }
 
 // DownloadStatus polls a task.
