@@ -328,7 +328,7 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 	key := videoKey(deviceID, req.Channel, from)
 	// The insert's resWebPath is not directly servable; ask VSS for the real,
 	// token-bearing download URL for this finished task.
-	fetchURL, err := h.vss.DownloadURL(ctx, deviceID, task.TaskID)
+	fetchURL, err := h.vss.DownloadURL(ctx, deviceID, task.TaskID, task.ResWebPath)
 	if err != nil {
 		h.jobs.set(job.ID, "failed", "", err.Error())
 		return

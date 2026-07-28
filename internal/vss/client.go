@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -655,12 +656,12 @@ func (t DownloadTask) FileURL() string {
 // directly servable — the file server answers 404 on it and instead serves the
 // clip through a token-bearing downUrl (api/fileDown.php?filePath=…&token=…)
 // that only this endpoint returns. taskID is DownloadTask.TaskID.
-func (c *Client) DownloadURL(ctx context.Context, deviceID, taskID string) (string, error) {
+func (c *Client) DownloadURL(ctx context.Context, deviceID, taskID, resWebPath string) (string, error) {
 	const layout = "2006-01-02 15:04:05"
 	now := time.Now()
 	data, err := c.post(ctx, "/vss/webdownrecord/findPage.action", map[string]any{
 		"pageNum":       1,
-		"pageCount":     -1,
+		"pageCount":     100,
 		"deviceNo":      deviceID,
 		"username":      c.cfg.Username,
 		"scheme":        "http",
@@ -672,18 +673,26 @@ func (c *Client) DownloadURL(ctx context.Context, deviceID, taskID string) (stri
 	}
 	var out struct {
 		DataList []struct {
-			Guid    string `json:"guid"`
-			DownURL string `json:"downUrl"`
+			Guid       string `json:"guid"`
+			DownURL    string `json:"downUrl"`
+			ResWebPath string `json:"resWebPath"`
 		} `json:"dataList"`
 	}
-	if err := json.Unmarshal(data, &out); err != nil {
-		return "", fmt.Errorf("vss download url: decode: %w", err)
-	}
+	_ = json.Unmarshal(data, &out)
+	// Match on resWebPath (the insert and findPage agree on it), falling back to
+	// the task id. The insert taskId and findPage guid differ in format, so guid
+	// alone can miss.
 	for _, d := range out.DataList {
-		if d.Guid == taskID && d.DownURL != "" {
+		if d.DownURL != "" && (d.ResWebPath == resWebPath || d.Guid == taskID) {
 			return d.DownURL, nil
 		}
 	}
+	// Diagnostic: what did findPage actually return? Trimmed so it can't flood.
+	raw := string(data)
+	if len(raw) > 500 {
+		raw = raw[:500]
+	}
+	log.Printf("dashcam: downUrl not found (task=%s resWebPath=%s rows=%d) findPage data=%s", taskID, resWebPath, len(out.DataList), raw)
 	return "", fmt.Errorf("vss download url: task not found in list")
 }
 
