@@ -378,18 +378,14 @@ func (h *Handler) track(w http.ResponseWriter, r *http.Request) {
 // S3 Standard, not Glacier: accident evidence is retrieved interactively and
 // must be instantly available, unlike the archival parquet.
 func (h *Handler) pullToS3(ctx context.Context, fileURL, key string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
+	// VSS reports the task "done" a beat before the extracted clip is actually
+	// readable on its file server, so a 404/5xx right after completion is usually
+	// "not written yet" — retry a few times before giving up.
+	resp, err := h.fetchClip(ctx, fileURL)
 	if err != nil {
 		return err
 	}
-	resp, err := h.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("fetch clip: %w", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("fetch clip: HTTP %d", resp.StatusCode)
-	}
 	tmp, err := os.CreateTemp("", "dashcam-*.mp4")
 	if err != nil {
 		return err
@@ -401,6 +397,42 @@ func (h *Handler) pullToS3(ctx context.Context, fileURL, key string) error {
 	}
 	tmp.Close()
 	return archive.UploadFileAs(ctx, h.bucket, key, tmp.Name(), types.StorageClassStandard, "video/mp4")
+}
+
+// fetchClip GETs the finished clip, retrying while the VSS file server reports it
+// missing (404/5xx) — the extracted file lands a moment after the task is "done".
+func (h *Handler) fetchClip(ctx context.Context, fileURL string) (*http.Response, error) {
+	const attempts = 6
+	var lastCode int
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(3 * time.Second):
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := h.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("fetch clip: %w", err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		resp.Body.Close()
+		lastCode = resp.StatusCode
+		// 404 (not written yet) and 5xx (server busy finalising) are worth waiting
+		// on; anything else is a hard error.
+		if resp.StatusCode != http.StatusNotFound && resp.StatusCode < 500 {
+			break
+		}
+	}
+	log.Printf("dashcam: clip not fetchable after %d tries (last HTTP %d): %s", attempts, lastCode, fileURL)
+	return nil, fmt.Errorf("fetch clip: HTTP %d", lastCode)
 }
 
 // downloadStatus godoc
