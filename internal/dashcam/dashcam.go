@@ -249,8 +249,11 @@ type DownloadRequest struct {
 func (h *Handler) startDownload(w http.ResponseWriter, r *http.Request) {
 	deviceID := chi.URLParam(r, "deviceId")
 	var req DownloadRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.Path == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "channel and clip path are required"})
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.Start == "" || req.Stop == "" {
+		// Downloads are by TIME RANGE now (req.Path is unused), so the window is
+		// what's required — a clip is defined by its start/stop, whether it came
+		// from the SD-card file list or an alarm's timestamp.
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "start and stop are required"})
 		return
 	}
 	const layout = "2006-01-02 15:04:05"
