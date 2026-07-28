@@ -651,11 +651,26 @@ func (c *Client) StartDownload(ctx context.Context, deviceID string, channel int
 	return &task, nil
 }
 
+// progressPct decodes VSS's progress field whether it arrives as a JSON number
+// (90) or a string ("90"). The vendor doc says string, but the live server sends
+// a bare number — and a string field rejecting a number failed the WHOLE status
+// decode, so every poll errored and the download "failed" with an unmarshal error.
+type progressPct string
+
+func (p *progressPct) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "null" {
+		s = ""
+	}
+	*p = progressPct(s)
+	return nil
+}
+
 // DownloadProgress is the state of a download task.
 type DownloadProgress struct {
-	TaskID    string `json:"taskId"`
-	DownState int    `json:"downState"` // 2 complete; -7 no data; -8 offline; -9 error
-	Progress  string `json:"progress"`  // 0-100
+	TaskID    string      `json:"taskId"`
+	DownState int         `json:"downState"` // 2 complete; -7 no data; -8 offline; -9 error
+	Progress  progressPct `json:"progress"`  // 0-100
 }
 
 // Done reports whether the download finished successfully.
