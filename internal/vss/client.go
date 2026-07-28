@@ -650,6 +650,43 @@ func (t DownloadTask) FileURL() string {
 	return strings.TrimRight(t.FileServerHost, "/") + t.ResWebPath
 }
 
+// DownloadURL returns the ready-to-fetch URL for a finished download task, from
+// the task-list endpoint (§3.15.4). The insert response's resWebPath is NOT
+// directly servable — the file server answers 404 on it and instead serves the
+// clip through a token-bearing downUrl (api/fileDown.php?filePath=…&token=…)
+// that only this endpoint returns. taskID is DownloadTask.TaskID.
+func (c *Client) DownloadURL(ctx context.Context, deviceID, taskID string) (string, error) {
+	const layout = "2006-01-02 15:04:05"
+	now := time.Now()
+	data, err := c.post(ctx, "/vss/webdownrecord/findPage.action", map[string]any{
+		"pageNum":       1,
+		"pageCount":     -1,
+		"deviceNo":      deviceID,
+		"username":      c.cfg.Username,
+		"scheme":        "http",
+		"taskStartTime": now.Add(-48 * time.Hour).Format(layout),
+		"taskEndTime":   now.Add(24 * time.Hour).Format(layout),
+	})
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		DataList []struct {
+			Guid    string `json:"guid"`
+			DownURL string `json:"downUrl"`
+		} `json:"dataList"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return "", fmt.Errorf("vss download url: decode: %w", err)
+	}
+	for _, d := range out.DataList {
+		if d.Guid == taskID && d.DownURL != "" {
+			return d.DownURL, nil
+		}
+	}
+	return "", fmt.Errorf("vss download url: task not found in list")
+}
+
 // StartDownload asks VSS to pull one clip (by its device path) onto the VSS
 // file server as an mp4. Returns a task to poll. `path` is the VideoFile.Path
 // from a prior search — downloading by file is exact, versus by time range

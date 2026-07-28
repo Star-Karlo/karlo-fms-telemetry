@@ -326,7 +326,14 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 	// file rather than buffering in memory — a clip is tens of MB.
 	h.jobs.set(job.ID, "uploading", "", "")
 	key := videoKey(deviceID, req.Channel, from)
-	if err := h.pullToS3(ctx, task.FileURL(), key); err != nil {
+	// The insert's resWebPath is not directly servable; ask VSS for the real,
+	// token-bearing download URL for this finished task.
+	fetchURL, err := h.vss.DownloadURL(ctx, deviceID, task.TaskID)
+	if err != nil {
+		h.jobs.set(job.ID, "failed", "", err.Error())
+		return
+	}
+	if err := h.pullToS3(ctx, fetchURL, key); err != nil {
 		h.jobs.set(job.ID, "failed", "", err.Error())
 		return
 	}
