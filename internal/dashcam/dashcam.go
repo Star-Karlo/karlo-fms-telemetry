@@ -67,6 +67,7 @@ func NewHandler(client *vss.Client, auth AuthFunc, bucket string, pool *pgxpool.
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/v1/dashcams", h.gated(h.list))
 	r.Get("/v1/dashcams/{deviceId}/videos", h.gated(h.videos))
+	r.Get("/v1/dashcams/{deviceId}/evidence", h.gated(h.evidence))
 	r.Get("/v1/dashcams/{deviceId}/track", h.gated(h.track))
 	r.Get("/v1/dashcams/{deviceId}/live", h.gated(h.live))
 	r.Post("/v1/dashcams/{deviceId}/download", h.gated(h.startDownload))
@@ -358,6 +359,64 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 		return
 	}
 	h.jobs.set(job.ID, "done", key, "")
+}
+
+// EvidenceClip is one alarm that has a ready evidence clip — the source for the
+// Recordings list, so every row carries the REAL alarm time (not a poll time)
+// and is guaranteed to save fast from the pre-uploaded clip.
+type EvidenceClip struct {
+	Code    int       `json:"code"`
+	Time    time.Time `json:"time"`
+	Lat     *float64  `json:"lat"`
+	Lon     *float64  `json:"lon"`
+	Channel int       `json:"channel"`
+}
+
+// evidence godoc
+//
+//	@Summary		A device's alarm evidence clips for a date
+//	@Description	Alarms that auto-uploaded an evidence clip, with their real time.
+//	@Tags			dashcams
+//	@Produce		json
+//	@Param			deviceId	path	string	true	"vss device id"
+//	@Param			date		query	string	true	"YYYY-MM-DD"
+//	@Success		200	{array}	dashcam.EvidenceClip
+//	@Router			/v1/dashcams/{deviceId}/evidence [get]
+func (h *Handler) evidence(w http.ResponseWriter, r *http.Request) {
+	deviceID := chi.URLParam(r, "deviceId")
+	day, err := time.Parse("2006-01-02", r.URL.Query().Get("date"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "date must be YYYY-MM-DD"})
+		return
+	}
+	evs, err := h.vss.SearchAlarmEvidence(r.Context(), deviceID, day, day.Add(24*time.Hour), "")
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	const layout = "2006-01-02 15:04:05"
+	out := make([]EvidenceClip, 0, len(evs))
+	for _, e := range evs {
+		ch, hasVideo := 0, false
+		for _, f := range e.Files {
+			if (f.FileType == 1 || f.FileType == 2) && f.DownURL != "" { // has a video clip
+				ch, hasVideo = f.Channel, true
+				break
+			}
+		}
+		if !hasVideo {
+			continue
+		}
+		if ch == 0 {
+			ch = 1
+		}
+		t, perr := time.ParseInLocation(layout, e.AlarmTime, wib) // device-local -> true instant
+		if perr != nil {
+			continue
+		}
+		out = append(out, EvidenceClip{Code: e.AlarmType, Time: t, Lat: e.Lat, Lon: e.Lon, Channel: ch})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // TrackPoint is one GPS fix from the dashcam's own GPS, in the history shape.
