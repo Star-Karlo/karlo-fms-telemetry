@@ -288,8 +288,8 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 	// common; the vendor's guidance (§3.15.2) is to continue the task, not start
 	// over — restarting just hits the same blip and is why a plain "Retry" kept
 	// failing. A bounded resume count stops a hopeless link from looping forever.
-	deadline := time.Now().Add(10 * time.Minute)
-	const maxResumes = 6
+	deadline := time.Now().Add(20 * time.Minute)
+	const maxResumes = 15
 	resumes := 0
 	for {
 		if time.Now().After(deadline) {
@@ -318,6 +318,9 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 			if rerr := h.vss.ResumeDownload(ctx, task.TaskID, task.ResWebPath); rerr != nil {
 				log.Printf("dashcam: resume job %s: %v", job.ID, rerr)
 			}
+			// Give a fluctuating cellular link a moment to recover before the next
+			// poll, rather than hammering resume every 4s.
+			time.Sleep(6 * time.Second)
 		}
 		// otherwise 0/1 (not started / downloading) — keep waiting
 	}
