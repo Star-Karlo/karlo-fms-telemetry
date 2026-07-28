@@ -268,7 +268,12 @@ func (h *Handler) startDownload(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, req DownloadRequest, from, to time.Time) {
 	h.jobs.set(job.ID, "downloading", "", "")
-	task, err := h.vss.StartDownload(ctx, deviceID, req.Channel, from, to, req.Path)
+	// Download by TIME RANGE, not by whole file. A single SD-card recording file
+	// is ~156 MB regardless of how short the chosen clip is, and pulling all of it
+	// over 4G is what stalled saves at ~90%. Passing an empty resDeviceFileName
+	// makes VSS extract only the selected window (a few MB for a short clip), so
+	// there is far less to transfer and far less to drop. req.Path is left unused.
+	task, err := h.vss.StartDownload(ctx, deviceID, req.Channel, from, to, "")
 	if err != nil {
 		h.jobs.set(job.ID, "failed", "", err.Error())
 		return
