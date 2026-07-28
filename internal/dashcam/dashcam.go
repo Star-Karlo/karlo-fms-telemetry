@@ -273,6 +273,23 @@ func (h *Handler) startDownload(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, req DownloadRequest, from, to time.Time) {
 	h.jobs.set(job.ID, "downloading", "", "")
+
+	// FAST PATH — an alarm's evidence clip is already on the VSS server: when a
+	// DMS/ADAS alarm fires the dashcam auto-uploads a short clip, so for an
+	// alarm-based save we just copy that (a few MB, already uploaded) instead of
+	// pulling the whole ~156 MB SD-card segment over the truck's 4G, which stalls
+	// on a weak link. Falls through to the SD-card path if there's no such clip.
+	if url, ok := h.evidenceClipURL(ctx, deviceID, from, to, req.Channel); ok {
+		h.jobs.set(job.ID, "uploading", "", "")
+		key := videoKey(deviceID, req.Channel, from)
+		if err := h.pullToS3(ctx, url, key); err != nil {
+			log.Printf("dashcam: evidence clip fetch for %s: %v (falling back to SD card)", deviceID, err)
+		} else {
+			h.jobs.set(job.ID, "done", key, "")
+			return
+		}
+	}
+
 	// Download by TIME RANGE, not by whole file. A single SD-card recording file
 	// is ~156 MB regardless of how short the chosen clip is, and pulling all of it
 	// over 4G is what stalled saves at ~90%. Passing an empty resDeviceFileName
@@ -382,6 +399,39 @@ func (h *Handler) track(w http.ResponseWriter, r *http.Request) {
 		out = append(out, TrackPoint{Lat: f.Lat, Lon: f.Lon, Time: f.T})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// evidenceClipURL returns the ready-to-fetch URL of an alarm's evidence VIDEO in
+// [from,to] — the short clip the dashcam auto-uploaded to the VSS server when the
+// alarm fired — preferring the requested channel. false when the window has no
+// such clip (so the caller pulls from the SD card instead).
+func (h *Handler) evidenceClipURL(ctx context.Context, deviceID string, from, to time.Time, channel int) (string, bool) {
+	evs, err := h.vss.SearchAlarmEvidence(ctx, deviceID, from, to, "")
+	if err != nil {
+		return "", false
+	}
+	const layout = "2006-01-02 15:04:05"
+	lo, hi := from.Add(-30*time.Second), to.Add(30*time.Second) // small slack
+	var fallback string
+	for _, e := range evs {
+		for _, f := range e.Files {
+			if f.DownURL == "" || (f.FileType != 1 && f.FileType != 2) {
+				continue // videos only (1 ordinary, 2 alarm); skip pictures
+			}
+			if t, perr := time.Parse(layout, f.StartTime); perr == nil {
+				if t.Before(lo) || t.After(hi) {
+					continue
+				}
+			}
+			if channel == 0 || f.Channel == 0 || f.Channel == channel {
+				return f.DownURL, true
+			}
+			if fallback == "" {
+				fallback = f.DownURL
+			}
+		}
+	}
+	return fallback, fallback != ""
 }
 
 // pullToS3 streams the VSS file to a temp file and uploads it. Video kept as
