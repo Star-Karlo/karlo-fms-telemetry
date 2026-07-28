@@ -295,6 +295,52 @@
                 }
             }
         },
+        "/v1/dashcams/{deviceId}/track": {
+            "get": {
+                "description": "The device's GPS fixes, for a vehicle that has a camera but no\ntracker — so its trip history comes from the dashcam.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "A dashcam's own GPS track over a range",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "vss device id",
+                        "name": "deviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dashcam.TrackPoint"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/dashcams/{deviceId}/videos": {
             "get": {
                 "description": "Clips on the device SD card for the given day. Each clip is annotated with the position the dashcam's own GPS reported at the clip's start (derived — the vendor's clip list carries no coordinate).",
@@ -1053,6 +1099,20 @@
                     "type": "string"
                 },
                 "stop": {
+                    "type": "string"
+                }
+            }
+        },
+        "dashcam.TrackPoint": {
+            "type": "object",
+            "properties": {
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "time": {
                     "type": "string"
                 }
             }

@@ -59,6 +59,15 @@ definitions:
       stop:
         type: string
     type: object
+  dashcam.TrackPoint:
+    properties:
+      lat:
+        type: number
+      lon:
+        type: number
+      time:
+        type: string
+    type: object
   ingest.GenericReading:
     properties:
       altitude:
@@ -502,6 +511,39 @@ paths:
               type: string
             type: object
       summary: Embeddable live-view URL
+      tags:
+      - dashcams
+  /v1/dashcams/{deviceId}/track:
+    get:
+      description: |-
+        The device's GPS fixes, for a vehicle that has a camera but no
+        tracker — so its trip history comes from the dashcam.
+      parameters:
+      - description: vss device id
+        in: path
+        name: deviceId
+        required: true
+        type: string
+      - description: RFC3339
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: RFC3339
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dashcam.TrackPoint'
+            type: array
+      summary: A dashcam's own GPS track over a range
       tags:
       - dashcams
   /v1/dashcams/{deviceId}/videos:

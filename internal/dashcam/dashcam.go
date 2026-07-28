@@ -65,6 +65,7 @@ func NewHandler(client *vss.Client, auth AuthFunc, bucket string, pool *pgxpool.
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/v1/dashcams", h.gated(h.list))
 	r.Get("/v1/dashcams/{deviceId}/videos", h.gated(h.videos))
+	r.Get("/v1/dashcams/{deviceId}/track", h.gated(h.track))
 	r.Get("/v1/dashcams/{deviceId}/live", h.gated(h.live))
 	r.Post("/v1/dashcams/{deviceId}/download", h.gated(h.startDownload))
 	r.Get("/v1/dashcams/downloads/{jobId}", h.gated(h.downloadStatus))
@@ -320,6 +321,50 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 		return
 	}
 	h.jobs.set(job.ID, "done", key, "")
+}
+
+// TrackPoint is one GPS fix from the dashcam's own GPS, in the history shape.
+type TrackPoint struct {
+	Lat  float64   `json:"lat"`
+	Lon  float64   `json:"lon"`
+	Time time.Time `json:"time"`
+}
+
+// track godoc
+//
+//	@Summary		A dashcam's own GPS track over a range
+//	@Description	The device's GPS fixes, for a vehicle that has a camera but no
+//	@Description	tracker — so its trip history comes from the dashcam.
+//	@Tags			dashcams
+//	@Produce		json
+//	@Param			deviceId	path	string	true	"vss device id"
+//	@Param			from		query	string	true	"RFC3339"
+//	@Param			to			query	string	true	"RFC3339"
+//	@Success		200	{array}	dashcam.TrackPoint
+//	@Router			/v1/dashcams/{deviceId}/track [get]
+func (h *Handler) track(w http.ResponseWriter, r *http.Request) {
+	deviceID := chi.URLParam(r, "deviceId")
+	from, err1 := time.Parse(time.RFC3339, r.URL.Query().Get("from"))
+	to, err2 := time.Parse(time.RFC3339, r.URL.Query().Get("to"))
+	if err1 != nil || err2 != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "from and to must be RFC3339"})
+		return
+	}
+	// VSS speaks the device's local time (WIB), so query in WIB.
+	pts, err := h.vss.Track(r.Context(), deviceID, from.In(wib), to.In(wib))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	out := make([]TrackPoint, 0, len(pts))
+	for _, p := range pts {
+		// vss.Track parses the device-local timestamp as a naive time (UTC zone),
+		// so re-stamp its wall clock as WIB to get the true instant back.
+		t := p.Time
+		wibT := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, wib)
+		out = append(out, TrackPoint{Lat: p.Lat, Lon: p.Lon, Time: wibT})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // pullToS3 streams the VSS file to a temp file and uploads it. Video kept as
