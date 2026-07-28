@@ -48,6 +48,7 @@ type Handler struct {
 	jobs   *jobStore
 	client *http.Client
 	pool   *pgxpool.Pool
+	tracks *trackCache
 }
 
 // NewHandler builds the handler. bucket is where downloaded clips are kept
@@ -58,6 +59,7 @@ func NewHandler(client *vss.Client, auth AuthFunc, bucket string, pool *pgxpool.
 		vss: client, auth: auth, bucket: bucket, pool: pool,
 		jobs:   newJobStore(),
 		client: &http.Client{Timeout: 10 * time.Minute}, // clip pulls are large + slow
+		tracks: newTrackCache(client),
 	}
 }
 
@@ -355,19 +357,16 @@ func (h *Handler) track(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "from and to must be RFC3339"})
 		return
 	}
-	// VSS speaks the device's local time (WIB), so query in WIB.
-	pts, err := h.vss.Track(r.Context(), deviceID, from.In(wib), to.In(wib))
+	// Served from a per-day cache so repeatedly changing the date range doesn't
+	// re-hit VSS's throttled track API (the intermittent 502 the operators saw).
+	fixes, err := h.tracks.rangeFixes(r.Context(), deviceID, from.In(wib), to.In(wib))
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	out := make([]TrackPoint, 0, len(pts))
-	for _, p := range pts {
-		// vss.Track parses the device-local timestamp as a naive time (UTC zone),
-		// so re-stamp its wall clock as WIB to get the true instant back.
-		t := p.Time
-		wibT := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, wib)
-		out = append(out, TrackPoint{Lat: p.Lat, Lon: p.Lon, Time: wibT})
+	out := make([]TrackPoint, 0, len(fixes))
+	for _, f := range fixes {
+		out = append(out, TrackPoint{Lat: f.Lat, Lon: f.Lon, Time: f.T})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
