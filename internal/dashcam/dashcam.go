@@ -286,7 +286,7 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 			return
 		}
 		if p.Failed() {
-			h.jobs.set(job.ID, "failed", "", fmt.Sprintf("VSS download state %d", p.DownState))
+			h.jobs.set(job.ID, "failed", "", p.Reason())
 			return
 		}
 		if p.Done() {

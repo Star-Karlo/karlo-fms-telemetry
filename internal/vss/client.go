@@ -666,6 +666,23 @@ func (p DownloadProgress) Failed() bool {
 	return p.DownState == -7 || p.DownState == -8 || p.DownState == -9
 }
 
+// Reason turns the vendor's numeric downState into a message a dispatcher can
+// act on. Pulling a clip is a LIVE command to the dashcam, so "device offline"
+// is the common one: the truck's camera must be powered on and connected for
+// VSS to fetch the file off its SD card.
+func (p DownloadProgress) Reason() string {
+	switch p.DownState {
+	case -7:
+		return "clip not found on the SD card — it may have been overwritten"
+	case -8:
+		return "dashcam is offline — power the camera on and retry"
+	case -9:
+		return "the dashcam failed to prepare the clip — retry"
+	default:
+		return fmt.Sprintf("dashcam download failed (state %d)", p.DownState)
+	}
+}
+
 // DownloadStatus polls a task.
 func (c *Client) DownloadStatus(ctx context.Context, taskID, resWebPath string) (*DownloadProgress, error) {
 	data, err := c.post(ctx, "/vss/webdownrecord/findTaskProgress.action", map[string]any{
