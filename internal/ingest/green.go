@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,10 +49,44 @@ type GreenEvent struct {
 	Speed      *float64 `json:"speed"`
 }
 
-// GreenStore persists and serves tracker Green Driving events.
-type GreenStore struct{ pool *pgxpool.Pool }
+// GreenStore persists and serves tracker Green Driving events. It also derives
+// events from the raw accelerometer (Axis X/Y/Z) for devices that report axes
+// but not native Green Driving events — keeping a small in-memory per-device
+// resting baseline (the gravity vector) and a per-event debounce.
+type GreenStore struct {
+	pool *pgxpool.Pool
 
-func NewGreenStore(pool *pgxpool.Pool) *GreenStore { return &GreenStore{pool: pool} }
+	mu       sync.Mutex
+	baseline map[string]axisVec   // imei -> resting gravity vector (mg)
+	lastEvt  map[string]time.Time // "imei:type" -> last emit (debounce)
+}
+
+func NewGreenStore(pool *pgxpool.Pool) *GreenStore {
+	return &GreenStore{pool: pool, baseline: map[string]axisVec{}, lastEvt: map[string]time.Time{}}
+}
+
+// axisVec is an accelerometer sample / baseline in mg.
+type axisVec struct{ x, y, z float64 }
+
+// Raw-axis harsh-driving keys (mg). Named as our upstream sends them, with the
+// Teltonika AVL ids as a fallback (17/18/19 = Axis X/Y/Z).
+var (
+	axisXKeys = []string{"Axis X", "17", "axis_x"}
+	axisYKeys = []string{"Axis Y", "18", "axis_y"}
+	axisZKeys = []string{"Axis Z", "19", "axis_z"}
+)
+
+// Harsh thresholds, in g of deviation from the device's resting baseline.
+// v1 uses simple per-axis thresholds; the dominant axis wins so one manoeuvre
+// yields one event. X -> accel(+)/brake(-), Y -> cornering, Z -> bump/road-shock.
+const (
+	harshAccelG  = 0.35
+	harshCornerG = 0.40
+	harshBumpG   = 0.60
+	restSpeedKmh = 3.0             // below this (or Movement=0) counts as resting
+	axisDebounce = 10 * time.Second
+	baseAlpha    = 0.1 // EMA weight when updating the resting baseline
+)
 
 // firstNum returns the first candidate key that holds a number.
 func firstNum(m map[string]any, keys []string) (float64, bool) {
@@ -88,24 +124,106 @@ func ioFloat(v any) (float64, bool) {
 // ingest of the underlying telemetry.
 func (g *GreenStore) Extract(ctx context.Context, readings []Reading) {
 	for _, rd := range readings {
-		t, ok := firstNum(rd.Metadata, greenTypeKeys)
-		if !ok {
-			continue // no Green Driving type on this record — not an event
+		if t, ok := firstNum(rd.Metadata, greenTypeKeys); ok {
+			typ := int(t)
+			if typ >= 1 && typ <= 3 { // native Green Driving event
+				ev := GreenEvent{IMEI: rd.IMEI, EventType: typ, OccurredAt: rd.GPSTime.Format(time.RFC3339)}
+				if v, ok := firstNum(rd.Metadata, greenValueKeys); ok && v > 0 {
+					ev.Value = &v
+				}
+				if d, ok := firstNum(rd.Metadata, greenDurationKeys); ok {
+					dm := int(d)
+					ev.DurationMs = &dm
+				}
+				g.store(ctx, rd, ev)
+				continue // native event present — don't also derive from the axes
+			}
 		}
-		typ := int(t)
-		if typ < 1 || typ > 3 {
-			continue // only 1/2/3 are the harsh accel/brake/corner types
-		}
-		ev := GreenEvent{IMEI: rd.IMEI, EventType: typ, OccurredAt: rd.GPSTime.Format(time.RFC3339)}
-		if v, ok := firstNum(rd.Metadata, greenValueKeys); ok && v > 0 {
-			ev.Value = &v
-		}
-		if d, ok := firstNum(rd.Metadata, greenDurationKeys); ok {
-			dm := int(d)
-			ev.DurationMs = &dm
-		}
-		g.store(ctx, rd, ev)
+		// No native Green Driving event: derive one from the raw accelerometer.
+		g.detectAxis(ctx, rd)
 	}
+}
+
+// detectAxis derives a harsh-driving event from the raw accelerometer (Axis
+// X/Y/Z, mg) when the device reports axes but no native Green Driving event.
+// A tilted mount offsets the resting gravity vector, so we subtract a per-device
+// baseline (learned while stationary) and threshold the deviation in g. The
+// dominant axis wins; the event is stored in the same green_driving_events table
+// with value = g×100, so FMS's poller scores it identically to a native event.
+func (g *GreenStore) detectAxis(ctx context.Context, rd Reading) {
+	x, okx := firstNum(rd.Metadata, axisXKeys)
+	y, oky := firstNum(rd.Metadata, axisYKeys)
+	z, okz := firstNum(rd.Metadata, axisZKeys)
+	if !okx || !oky || !okz {
+		return // no accelerometer on this reading
+	}
+	cur := axisVec{x, y, z}
+
+	// Resting = not moving; used to (re)learn the gravity baseline.
+	resting := rd.Speed < restSpeedKmh
+	if mv, ok := firstNum(rd.Metadata, []string{"Movement"}); ok && mv == 0 {
+		resting = true
+	}
+
+	g.mu.Lock()
+	base, seen := g.baseline[rd.IMEI]
+	if !seen {
+		g.baseline[rd.IMEI] = cur // seed on first sight; no event yet
+		g.mu.Unlock()
+		return
+	}
+	if resting {
+		g.baseline[rd.IMEI] = axisVec{ // EMA toward the current resting vector
+			base.x + baseAlpha*(cur.x-base.x),
+			base.y + baseAlpha*(cur.y-base.y),
+			base.z + baseAlpha*(cur.z-base.z),
+		}
+		g.mu.Unlock()
+		return
+	}
+	g.mu.Unlock()
+
+	// Deviation from rest, in g.
+	dx := (cur.x - base.x) / 1000.0
+	dy := (cur.y - base.y) / 1000.0
+	dz := (cur.z - base.z) / 1000.0
+
+	// Pick the axis whose deviation is the largest multiple of its threshold.
+	bestType, bestRatio, bestG := 0, 0.0, 0.0
+	consider := func(typ int, dev, thr float64) {
+		a := math.Abs(dev)
+		if a >= thr && a/thr > bestRatio {
+			bestType, bestRatio, bestG = typ, a/thr, a
+		}
+	}
+	accelType := 1 // +X = acceleration, -X = braking (sign is mount-relative; v1)
+	if dx < 0 {
+		accelType = 2
+	}
+	consider(accelType, dx, harshAccelG)
+	consider(3, dy, harshCornerG) // cornering (Y)
+	consider(4, dz, harshBumpG)   // bump / road-shock (Z)
+	if bestType == 0 {
+		return // nothing crossed a threshold
+	}
+
+	// Per-device, per-type debounce so one manoeuvre isn't stored many times.
+	key := rd.IMEI + ":" + strconv.Itoa(bestType)
+	g.mu.Lock()
+	if last, ok := g.lastEvt[key]; ok && rd.GPSTime.Sub(last) < axisDebounce {
+		g.mu.Unlock()
+		return
+	}
+	g.lastEvt[key] = rd.GPSTime
+	g.mu.Unlock()
+
+	val := bestG * 100.0 // g×100, matching FMS teltonikaValueToG (0.01)
+	g.store(ctx, rd, GreenEvent{
+		IMEI:       rd.IMEI,
+		EventType:  bestType,
+		Value:      &val,
+		OccurredAt: rd.GPSTime.Format(time.RFC3339),
+	})
 }
 
 func (g *GreenStore) store(ctx context.Context, rd Reading, ev GreenEvent) {
