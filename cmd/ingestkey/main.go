@@ -6,6 +6,7 @@
 //
 //	DATABASE_URL=postgres://... go run ./cmd/ingestkey create teltonika-relay
 //	DATABASE_URL=postgres://... go run ./cmd/ingestkey list
+//	DATABASE_URL=postgres://... go run ./cmd/ingestkey rename 3 mast-gateway
 //	DATABASE_URL=postgres://... go run ./cmd/ingestkey revoke 3
 package main
 
@@ -50,6 +51,11 @@ func main() {
 			log.Fatal("usage: ingestkey revoke <id>   (see `ingestkey list`)")
 		}
 		revoke(ctx, pool, os.Args[2])
+	case "rename":
+		if len(os.Args) < 4 {
+			log.Fatal("usage: ingestkey rename <id> <new-name>   (see `ingestkey list`)")
+		}
+		rename(ctx, pool, os.Args[2], os.Args[3])
 	default:
 		usage()
 	}
@@ -124,6 +130,19 @@ func revoke(ctx context.Context, pool *pgxpool.Pool, id string) {
 	fmt.Printf("Key id=%s revoked. Takes effect within 60s (running services cache validations).\n", id)
 }
 
+func rename(ctx context.Context, pool *pgxpool.Pool, id, name string) {
+	// Label only — the key value (hash) is untouched, so senders keep working.
+	tag, err := pool.Exec(ctx,
+		`UPDATE ingest_key SET name = $2 WHERE id = $1`, id, name)
+	if err != nil {
+		log.Fatalf("rename: %v", err)
+	}
+	if tag.RowsAffected() == 0 {
+		log.Fatalf("no key with id=%s (check `ingestkey list`)", id)
+	}
+	fmt.Printf("Key id=%s renamed to %q. The key value is unchanged — senders keep working.\n", id, name)
+}
+
 func ts(t *time.Time) string {
 	if t == nil {
 		return "never"
@@ -132,7 +151,7 @@ func ts(t *time.Time) string {
 }
 
 func usage() {
-	log.Fatal("usage: ingestkey <create <name> | list | revoke <id>>")
+	log.Fatal("usage: ingestkey <create <name> | list | rename <id> <new-name> | revoke <id>>")
 }
 
 func env(k, def string) string {
