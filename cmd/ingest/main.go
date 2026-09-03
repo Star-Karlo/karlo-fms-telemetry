@@ -23,6 +23,7 @@ import (
 	_ "github.com/karlo/fms/cmd/ingest/docs"
 	"github.com/karlo/fms/internal/dashcam"
 	"github.com/karlo/fms/internal/geocode"
+	"github.com/karlo/fms/internal/gmt"
 	"github.com/karlo/fms/internal/ingest"
 	"github.com/karlo/fms/internal/vss"
 )
@@ -133,6 +134,14 @@ func main() {
 	// the push WebSocket, which the vendor server rejects at the handshake.
 	// No-op when VSS is not configured.
 	go dashcam.NewEvidenceRunner(vssClient, pool).Run(ctx)
+
+	// GMT Teletech GPS poller: pull the whole fleet's live status every 90s and
+	// store each vehicle as a telemetry reading (same shape as a device POST).
+	// No-op unless GMT_API_KEY is set. The key is a secret — inject via env.
+	go gmt.NewPoller(
+		gmt.New(gmt.Config{BaseURL: env("GMT_BASE_URL", ""), APIKey: env("GMT_API_KEY", "")}),
+		geoSvc, ingest.NewWriter(pool),
+	).Run(ctx)
 
 	log.Printf("ingest service on %s  (swagger: http://localhost%s/swagger/index.html)", addr, addr)
 	log.Fatal(http.ListenAndServe(addr, r))

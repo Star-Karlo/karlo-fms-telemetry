@@ -119,23 +119,8 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	rows := make([]Row, 0, len(readings))
-	for _, rd := range readings {
-		row := Row{Reading: rd}
-		// Best-effort city enrichment (in-process, cached). A geocode failure
-		// must never fail an ingest — the row just stores NULL location.
-		if res, gerr := h.geo.Reverse(ctx, rd.Lat, rd.Lon); gerr == nil && res.Found {
-			row.Kecamatan = res.Kecamatan
-			row.Kelurahan = res.Kelurahan // village (ADM4)
-			row.Kabupaten = res.Kabupaten // regency (empty for cities)
-			row.Kota = res.Kota           // city (empty for regencies)
-			row.Provinsi = res.Provinsi
-			row.Jalan = res.Jalan // nearest street
-		}
-		rows = append(rows, row)
-	}
-
-	if err := h.w.WriteBatch(ctx, rows); err != nil {
+	stored, err := WriteReadings(ctx, h.geo, h.w, readings)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "write failed"})
 		return
 	}
@@ -146,7 +131,31 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 		h.green.Extract(ctx, readings)
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"stored": len(rows)})
+	writeJSON(w, http.StatusAccepted, map[string]any{"stored": stored})
+}
+
+// WriteReadings reverse-geocodes each reading (best-effort, cached) and persists
+// the batch. Shared by the push ingest handler and pull pollers (e.g. the GMT
+// vehicle-status poller) so every source stores an identically-shaped row. A
+// geocode failure never fails the write — the row just stores NULL location.
+func WriteReadings(ctx context.Context, geo *geocode.Service, w *Writer, readings []Reading) (int, error) {
+	rows := make([]Row, 0, len(readings))
+	for _, rd := range readings {
+		row := Row{Reading: rd}
+		if res, gerr := geo.Reverse(ctx, rd.Lat, rd.Lon); gerr == nil && res.Found {
+			row.Kecamatan = res.Kecamatan
+			row.Kelurahan = res.Kelurahan
+			row.Kabupaten = res.Kabupaten
+			row.Kota = res.Kota
+			row.Provinsi = res.Provinsi
+			row.Jalan = res.Jalan
+		}
+		rows = append(rows, row)
+	}
+	if err := w.WriteBatch(ctx, rows); err != nil {
+		return 0, err
+	}
+	return len(rows), nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
