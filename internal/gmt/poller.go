@@ -3,6 +3,7 @@ package gmt
 import (
 	"context"
 	"log"
+	"math"
 	"strings"
 	"time"
 
@@ -79,14 +80,13 @@ func (p *Poller) tick(ctx context.Context) {
 			"licensePlate":   s.LicensePlate,
 			"hullNo":         s.HullNo,
 		}
+		// Tank level as a clean PERCENT (one decimal), under the exact key the fuel
+		// analysis (fuelLevelPct) AND the live Sensors panel both read. We do NOT
+		// emit the raw per-tank `fuel` array or the capacity/filtered figures: the
+		// array rendered as junk ("7,7,7") in the panel, and FMS's fuel analysis
+		// uses the vehicle's own configured tank size, not the device's.
 		if s.FuelCapacity > 0 {
-			meta["fuelCapacity"] = s.FuelCapacity
-			meta["fuelFiltered"] = s.FuelFiltered
-			// A percentage FMS's fuel analysis can read directly.
-			meta["fuel_percentage"] = s.FuelFiltered / s.FuelCapacity * 100
-		}
-		if len(s.Fuel) > 0 {
-			meta["fuel"] = s.Fuel
+			meta["Fuel Level"] = math.Round(s.FuelFiltered/s.FuelCapacity*1000) / 10
 		}
 		if len(s.Temperature) > 0 {
 			meta["temperature"] = s.Temperature
