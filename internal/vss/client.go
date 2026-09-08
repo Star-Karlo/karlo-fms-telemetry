@@ -761,6 +761,10 @@ func (c *Client) StartDownload(ctx context.Context, deviceID string, channel int
 		"resEndTime":        to.Format(layout),
 		"resDeviceFileName": path,
 		"fileFormat":        "mp4",
+		// Force the MAIN stream (HD), which is the one that carries audio — the
+		// sub-stream is video-only, so downloads came out silent. VSS ignores an
+		// unknown key, so this is safe pending confirmation from the VSS API PDF.
+		"streamType": 1,
 	})
 	if err != nil {
 		return nil, err
