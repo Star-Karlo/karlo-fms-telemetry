@@ -4,6 +4,7 @@
 //	telmigrate schema            apply the RDS schema (db/rds/schema.sql, embedded) to DST_DSN
 //	telmigrate copy [days]       stream every table SRC_DSN -> DST_DSN; hypertables day by day
 //	telmigrate verify [days]     row counts on both sides
+//	telmigrate role              set telemetry_app's password from APP_DSN (the URL the services will use)
 //
 // Streaming COPY, one table at a time, and the two hypertables one DAY at a
 // time. A day is ~1.7 M rows; streaming keeps memory flat regardless, and
@@ -65,6 +66,8 @@ func main() {
 		copyAll(ctx, src, dst, days)
 	case "verify":
 		verify(ctx, src, dst, days)
+	case "role":
+		setAppRole(ctx, dst, os.Getenv("APP_DSN"))
 	default:
 		log.Fatalf("unknown command %q", os.Args[1])
 	}
@@ -77,6 +80,30 @@ func connect(ctx context.Context, dsn, what string) *pgx.Conn {
 	}
 	return c
 }
+
+// setAppRole gives telemetry_app the password carried in APP_DSN, then proves
+// the URL works by connecting with it. The password reaches the task as a
+// secret, never as an argument or an override.
+func setAppRole(ctx context.Context, dst, appDSN string) {
+	cfg, err := pgx.ParseConfig(appDSN)
+	if err != nil || cfg.User == "" || cfg.Password == "" {
+		log.Fatal("APP_DSN must be a full URL with user and password")
+	}
+	c := connect(ctx, dst, "dst")
+	if _, err := c.Exec(ctx, fmt.Sprintf("ALTER ROLE %s PASSWORD %s", pgx.Identifier{cfg.User}.Sanitize(), quoteLiteral(cfg.Password))); err != nil {
+		log.Fatalf("alter role: %v", err)
+	}
+	c.Close(ctx)
+	app := connect(ctx, appDSN, "app")
+	var n int
+	if err := app.QueryRow(ctx, "SELECT count(*) FROM telemetry WHERE false").Scan(&n); err != nil {
+		log.Fatalf("app role cannot read telemetry: %v", err)
+	}
+	app.Close(ctx)
+	fmt.Printf("role %s: password set, connect + select ok\n", cfg.User)
+}
+
+func quoteLiteral(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
 func applySchema(ctx context.Context, dst string) {
 	c := connect(ctx, dst, "dst")
@@ -170,6 +197,15 @@ func copyAll(ctx context.Context, srcDSN, dstDSN string, days int) {
 			from := today.AddDate(0, 0, -d)
 			to := from.AddDate(0, 0, 1)
 			start := time.Now()
+			// The schema only pre-creates yesterday..+3; older days need their
+			// partition first. In its OWN transaction: CREATE TABLE ... PARTITION
+			// OF takes ACCESS EXCLUSIVE on the parent, and holding that for the
+			// length of a day's copy would stall ingest once it writes here.
+			part := fmt.Sprintf("%s_%s", t, from.Format("20060102"))
+			if _, err := dst.Exec(ctx, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s PARTITION OF %s FOR VALUES FROM ('%s') TO ('%s')`,
+				pgx.Identifier{part}.Sanitize(), pgx.Identifier{t}.Sanitize(), from.Format("2006-01-02"), to.Format("2006-01-02"))); err != nil {
+				log.Fatalf("partition %s: %v", part, err)
+			}
 			tx, err := dst.Begin(ctx)
 			if err != nil {
 				log.Fatal(err)

@@ -321,7 +321,10 @@ CREATE TABLE IF NOT EXISTS telemetry (
 ) PARTITION BY RANGE ("time");
 
 -- Foreign keys, after every table exists.
-ALTER TABLE geofences ADD CONSTRAINT geofences_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id);
+DO $$ BEGIN
+  ALTER TABLE geofences ADD CONSTRAINT geofences_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Indexes, verbatim. On a partitioned parent Postgres propagates them to every partition.
 CREATE UNIQUE INDEX IF NOT EXISTS dashcam_alarms_alarm_id_uk ON public.dashcam_alarms USING btree (alarm_id) WHERE (alarm_id IS NOT NULL);
@@ -354,7 +357,10 @@ CREATE INDEX IF NOT EXISTS telemetry_time_idx ON public.telemetry USING btree ("
 -- `keep` days. Idempotent. The archiver calls it nightly after archiving.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION partition_maintenance(tbl text, keep_days int, ahead_days int DEFAULT 3)
-RETURNS TABLE(action text, partition_name text) LANGUAGE plpgsql AS $$
+RETURNS TABLE(action text, partition_name text) LANGUAGE plpgsql
+-- SECURITY DEFINER: the archiver connects as telemetry_app, which owns
+-- nothing; partitions are created and dropped as the schema owner.
+SECURITY DEFINER SET search_path = public AS $$
 DECLARE d date; p text; oldest date := current_date - keep_days; r record;
 BEGIN
   FOR d IN SELECT generate_series(current_date - 1, current_date + ahead_days, '1 day')::date LOOP
@@ -377,3 +383,20 @@ END $$;
 -- First partitions, so the schema is usable the moment it is applied.
 SELECT * FROM partition_maintenance('telemetry', 8, 3);
 SELECT * FROM partition_maintenance('mobile_telemetry', 8, 3);
+
+-- ---------------------------------------------------------------------------
+-- The application role. ingest, geocode and the archiver connect as
+-- telemetry_app: DML on every table (including partitions created later, via
+-- default privileges of the owner that creates them) and nothing else. The
+-- password is set by `telmigrate role`, never here.
+-- ---------------------------------------------------------------------------
+DO $$ BEGIN
+  CREATE ROLE telemetry_app LOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+GRANT USAGE ON SCHEMA public TO telemetry_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO telemetry_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO telemetry_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO telemetry_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO telemetry_app;
+GRANT EXECUTE ON FUNCTION partition_maintenance(text, int, int) TO telemetry_app;
