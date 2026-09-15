@@ -20,7 +20,6 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"io"
 	"log"
@@ -30,10 +29,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-)
 
-//go:embed schema.sql
-var schemaSQL string
+	"github.com/karlo/fms/db/rds"
+)
 
 // tables, in dependency order. The two hypertables go last and day by day.
 var plainTables = []string{
@@ -108,7 +106,7 @@ func quoteLiteral(s string) string { return "'" + strings.ReplaceAll(s, "'", "''
 func applySchema(ctx context.Context, dst string) {
 	c := connect(ctx, dst, "dst")
 	defer c.Close(ctx)
-	if _, err := c.Exec(ctx, schemaSQL); err != nil {
+	if _, err := c.Exec(ctx, rds.Schema); err != nil {
 		log.Fatalf("schema: %v", err)
 	}
 	var n int
