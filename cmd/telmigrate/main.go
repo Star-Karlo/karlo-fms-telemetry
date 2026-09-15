@@ -143,13 +143,16 @@ func copyAll(ctx context.Context, srcDSN, dstDSN string, days int) {
 		}
 		list := strings.Join(cols, ",")
 		start := time.Now()
-		// Whole-table tables are replaced atomically.
+		// Whole-table tables are replaced atomically. DELETE rather than
+		// TRUNCATE: tenants is referenced by geofences and TRUNCATE refuses
+		// that even inside one transaction; the order above has referenced
+		// tables first, so re-runs converge.
 		tx, err := dst.Begin(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if _, err := tx.Exec(ctx, "TRUNCATE "+pgx.Identifier{t}.Sanitize()); err != nil {
-			log.Fatalf("truncate %s: %v", t, err)
+		if _, err := tx.Exec(ctx, "DELETE FROM "+pgx.Identifier{t}.Sanitize()); err != nil {
+			log.Fatalf("clear %s: %v", t, err)
 		}
 		n := stream(ctx, src, tx.Conn(), fmt.Sprintf("SELECT %s FROM %s", list, t), fmt.Sprintf("COPY %s(%s)", t, list))
 		if err := tx.Commit(ctx); err != nil {
