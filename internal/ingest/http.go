@@ -61,24 +61,49 @@ func (h *Handler) authorized(ctx context.Context, presented string) bool {
 }
 
 func (h *Handler) Routes(r chi.Router) {
-	// write
+	// write — each handler checks the key itself, because a device that
+	// presents a per-device key is authorised differently from a service
+	// presenting the shared one.
 	r.Post("/v1/ingest", h.handleIngest)
-	// driving-behaviour events (Teltonika Green Driving), for FMS to poll
-	if h.green != nil {
-		r.Get("/v1/driving-events", h.green.handleEvents)
-	}
-	// read
-	r.Get("/v1/live", h.handleLiveAll)
-	r.Get("/v1/live/{imei}", h.handleLiveOne)
-	r.Get("/v1/history/{imei}", h.handleHistory)
-	// geofence (radius check)
-	r.Post("/v1/geofence/check", h.handleGeofenceCheckBatch)
-	r.Get("/v1/geofence/check", h.handleGeofenceCheckOne)
-	// mobile (driver-keyed telemetry from the phone app)
 	r.Post("/v1/ingest/mobile", h.handleMobileIngest)
-	r.Get("/v1/mobile/live", h.handleMobileLiveAll)
-	r.Get("/v1/mobile/live/{driver}", h.handleMobileLiveOne)
-	r.Get("/v1/mobile/history/{driver}", h.handleMobileHistory)
+
+	// READS REQUIRE THE KEY TOO.
+	//
+	// They did not, until 2026-09-15. The key guarded writes only, and every
+	// read below answered anyone: GET /v1/live with no header returned 2,180
+	// live positions across every customer's fleet, with street-level
+	// addresses. Found while smoke-testing the Jakarta stack, present in
+	// Singapore all along.
+	//
+	// Every legitimate reader already sends X-Ingest-Key — fms-backend's
+	// telemetry client, business-service's — so this locks out only the
+	// public. The browser never calls this service; it goes through fms-api.
+	r.Group(func(pr chi.Router) {
+		pr.Use(h.requireKey)
+		if h.green != nil {
+			pr.Get("/v1/driving-events", h.green.handleEvents)
+		}
+		pr.Get("/v1/live", h.handleLiveAll)
+		pr.Get("/v1/live/{imei}", h.handleLiveOne)
+		pr.Get("/v1/history/{imei}", h.handleHistory)
+		pr.Post("/v1/geofence/check", h.handleGeofenceCheckBatch)
+		pr.Get("/v1/geofence/check", h.handleGeofenceCheckOne)
+		pr.Get("/v1/mobile/live", h.handleMobileLiveAll)
+		pr.Get("/v1/mobile/live/{driver}", h.handleMobileLiveOne)
+		pr.Get("/v1/mobile/history/{driver}", h.handleMobileHistory)
+	})
+}
+
+// requireKey refuses a request that does not present a valid X-Ingest-Key,
+// using the same check the write path applies.
+func (h *Handler) requireKey(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !h.authorized(r.Context(), r.Header.Get("X-Ingest-Key")) {
+			http.Error(w, `{"error":"missing or invalid X-Ingest-Key"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // IngestResult is the response for a successful ingest.
