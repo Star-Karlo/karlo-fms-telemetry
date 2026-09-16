@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,20 +23,20 @@ const (
 // Position is a device reading returned by the read endpoints (geom flattened
 // to lat/lon). Nullable telemetry fields come back as null.
 type Position struct {
-	IMEI       string     `json:"imei"`
-	Time       time.Time  `json:"time"` // gpsCreatedAt
-	ReceivedAt *time.Time `json:"received_at"`
-	Lat        *float64   `json:"lat"`
-	Lon        *float64   `json:"lon"`
-	Speed      *float64   `json:"speed"`
-	Bearing    *float64   `json:"bearing"`
-	Ignition   *bool      `json:"ignition"`
-	Kecamatan  string     `json:"kecamatan"`
-	Kelurahan  string     `json:"kelurahan"`
-	Kabupaten  string     `json:"kabupaten"`
-	Kota       string     `json:"kota"`
-	Provinsi   string     `json:"provinsi"`
-	Jalan      string     `json:"jalan"`
+	IMEI       string          `json:"imei"`
+	Time       time.Time       `json:"time"` // gpsCreatedAt
+	ReceivedAt *time.Time      `json:"received_at"`
+	Lat        *float64        `json:"lat"`
+	Lon        *float64        `json:"lon"`
+	Speed      *float64        `json:"speed"`
+	Bearing    *float64        `json:"bearing"`
+	Ignition   *bool           `json:"ignition"`
+	Kecamatan  string          `json:"kecamatan"`
+	Kelurahan  string          `json:"kelurahan"`
+	Kabupaten  string          `json:"kabupaten"`
+	Kota       string          `json:"kota"`
+	Provinsi   string          `json:"provinsi"`
+	Jalan      string          `json:"jalan"`
 	Metadata   json.RawMessage `json:"metadata" swaggertype:"object"` // vendor io + extras (raw payload excluded)
 }
 
@@ -677,6 +678,7 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if fieldsRaw == "" && maxPoints == 0 {
 		page, err := h.r.History(r.Context(), imei, from, to, cursor, limit)
 		if err != nil {
+			log.Printf("history %s: %v", imei, err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 			return
 		}
