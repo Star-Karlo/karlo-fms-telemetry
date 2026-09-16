@@ -5,6 +5,7 @@
 //	telmigrate copy [days]       stream every table SRC_DSN -> DST_DSN; hypertables day by day
 //	telmigrate verify [days]     row counts on both sides
 //	telmigrate role              set telemetry_app's password from APP_DSN (the URL the services will use)
+//	telmigrate catchup FROM TO   AFTER cutover: append rows Tiger received in [FROM,TO) (RFC3339) that RDS lacks
 //
 // Streaming COPY, one table at a time, and the two hypertables one DAY at a
 // time. A day is ~1.7 M rows; streaming keeps memory flat regardless, and
@@ -66,6 +67,16 @@ func main() {
 		verify(ctx, src, dst, days)
 	case "role":
 		setAppRole(ctx, dst, os.Getenv("APP_DSN"))
+	case "catchup":
+		if len(os.Args) < 4 {
+			log.Fatal("usage: telmigrate catchup <from RFC3339> <to RFC3339>")
+		}
+		from, err1 := time.Parse(time.RFC3339, os.Args[2])
+		to, err2 := time.Parse(time.RFC3339, os.Args[3])
+		if err1 != nil || err2 != nil || !to.After(from) {
+			log.Fatal("catchup: bad window")
+		}
+		catchup(ctx, src, dst, from, to)
 	default:
 		log.Fatalf("unknown command %q", os.Args[1])
 	}
@@ -218,6 +229,63 @@ func copyAll(ctx context.Context, srcDSN, dstDSN string, days int) {
 			}
 			fmt.Printf("%-16s %s %9d rows  %s\n", t, from.Format("2006-01-02"), n, time.Since(start).Round(time.Second))
 		}
+	}
+}
+
+// catchup is the post-cutover tool. `copy` replaces whole tables, which is
+// right while RDS is idle and wrong the moment ingest writes there: it would
+// clobber `latest` and every event the new tasks stored. This instead
+// appends what Tiger received in the window and RDS lacks, matched on the
+// natural key (never the id — both databases have been generating those
+// independently since the roll). Aggregates (vehicle_day, coverage_*) are
+// left alone: a few minutes' gap in a rollup is noise; a clobber is not.
+func catchup(ctx context.Context, srcDSN, dstDSN string, from, to time.Time) {
+	if srcDSN == "" {
+		log.Fatal("SRC_DSN is not set")
+	}
+	src := connect(ctx, srcDSN, "src")
+	defer src.Close(ctx)
+	dst := connect(ctx, dstDSN, "dst")
+	defer dst.Close(ctx)
+
+	type spec struct {
+		table, timeCol string
+		cols           []string // empty = every column; set to omit generated ids
+		notExists      string   // correlates tmp t with live x
+	}
+	specs := []spec{
+		{"telemetry", "time", nil, `x.imei = t.imei AND x."time" = t."time"`},
+		{"mobile_telemetry", "time", nil, `x.driver = t.driver AND x."time" = t."time"`},
+		{"green_driving_events", "received_at", []string{"imei", "event_type", "value", "duration_ms", "occurred_at", "lat", "lon", "speed", "raw", "received_at"},
+			`x.imei = t.imei AND x.occurred_at = t.occurred_at AND x.event_type = t.event_type`},
+		{"dashcam_alarms", "received_at", []string{"device_id", "alarm_id", "code", "occurred_at", "lat", "lon", "speed", "raw", "received_at", "gforce"},
+			`x.device_id = t.device_id AND x.occurred_at = t.occurred_at AND x.code = t.code`},
+	}
+	for _, sp := range specs {
+		cols := sp.cols
+		if cols == nil {
+			cols = columns(ctx, src, sp.table)
+		}
+		list := strings.Join(cols, ",")
+		start := time.Now()
+		tx, err := dst.Begin(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, fmt.Sprintf(`CREATE TEMP TABLE t_catchup ON COMMIT DROP AS SELECT %s FROM %s WHERE false`, list, sp.table)); err != nil {
+			log.Fatalf("%s temp: %v", sp.table, err)
+		}
+		sel := fmt.Sprintf(`SELECT %s FROM %s WHERE %q >= '%s' AND %q < '%s'`, list, sp.table, sp.timeCol, from.Format(time.RFC3339), sp.timeCol, to.Format(time.RFC3339))
+		got := stream(ctx, src, tx.Conn(), sel, fmt.Sprintf("COPY t_catchup(%s)", list))
+		tag, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO %s(%s) SELECT %s FROM t_catchup t WHERE NOT EXISTS (SELECT 1 FROM %s x WHERE %s)`,
+			sp.table, list, list, sp.table, sp.notExists))
+		if err != nil {
+			log.Fatalf("%s insert: %v", sp.table, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%-22s tiger had %8d in window, appended %8d  %s\n", sp.table, got, tag.RowsAffected(), time.Since(start).Round(time.Second))
 	}
 }
 
