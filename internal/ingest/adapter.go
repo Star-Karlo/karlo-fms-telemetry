@@ -36,16 +36,16 @@ var defaultAdapter Adapter = genericAdapter{}
 // a single object or a JSON array of these. Top-level fields are consistent
 // across our vendors; the `io` object varies and is kept whole in metadata.
 type GenericReading struct {
-	IMEI            string         `json:"imei" example:"864454076648348"`                        // device IMEI (required)
-	Latitude        float64        `json:"latitude" example:"-6.68211"`                           // GPS latitude  -> geom column
-	Longitude       float64        `json:"longitude" example:"111.4544916"`                       // GPS longitude -> geom column
-	Bearing         *float64       `json:"bearing" example:"106.5"`                               // heading degrees (float) -> bearing column
-	Speed           *float64       `json:"speed" example:"0"`                                     // speed -> speed column
-	IgnitionOn      *bool          `json:"ignitionOn" example:"false"`                            // ignition on/off -> ignition column
-	GpsCreatedAt *time.Time     `json:"gpsCreatedAt" example:"2026-07-10T06:12:29Z"`    // dateGps (device fix time) -> time column. received_at is stamped by the server, not sent here.
-	Altitude        *float64       `json:"altitude" example:"20"`                                 // altitude -> metadata
-	Sat             *int           `json:"sat" example:"14"`                                      // satellite count -> metadata
-	IO              map[string]any `json:"io" swaggertype:"object,string"`                        // full vendor io blob -> metadata
+	IMEI         string         `json:"imei" example:"864454076648348"`              // device IMEI (required)
+	Latitude     float64        `json:"latitude" example:"-6.68211"`                 // GPS latitude  -> geom column
+	Longitude    float64        `json:"longitude" example:"111.4544916"`             // GPS longitude -> geom column
+	Bearing      *float64       `json:"bearing" example:"106.5"`                     // heading degrees (float) -> bearing column
+	Speed        *float64       `json:"speed" example:"0"`                           // speed -> speed column
+	IgnitionOn   *bool          `json:"ignitionOn" example:"false"`                  // ignition on/off -> ignition column
+	GpsCreatedAt *time.Time     `json:"gpsCreatedAt" example:"2026-07-10T06:12:29Z"` // dateGps (device fix time) -> time column. received_at is stamped by the server, not sent here.
+	Altitude     *float64       `json:"altitude" example:"20"`                       // altitude -> metadata
+	Sat          *int           `json:"sat" example:"14"`                            // satellite count -> metadata
+	IO           map[string]any `json:"io" swaggertype:"object,string"`              // full vendor io blob -> metadata
 }
 
 type genericAdapter struct{}

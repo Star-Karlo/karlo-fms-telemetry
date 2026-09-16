@@ -16,7 +16,7 @@ import (
 // (kecamatan → kabupaten → provinsi) plus the nearest OSM street, when one is
 // within StreetMaxDistM.
 type Place struct {
-	Kelurahan     string `json:"kelurahan"`      // ADM4 village / urban village
+	Kelurahan     string `json:"kelurahan"` // ADM4 village / urban village
 	Kecamatan     string `json:"kecamatan"`
 	Kabupaten     string `json:"kabupaten"` // kota/kabupaten = the "city" level
 	Provinsi      string `json:"provinsi"`

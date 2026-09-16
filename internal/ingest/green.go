@@ -83,7 +83,7 @@ const (
 	harshAccelG  = 0.35
 	harshCornerG = 0.40
 	harshBumpG   = 0.60
-	restSpeedKmh = 3.0             // below this (or Movement=0) counts as resting
+	restSpeedKmh = 3.0 // below this (or Movement=0) counts as resting
 	axisDebounce = 10 * time.Second
 	baseAlpha    = 0.1 // EMA weight when updating the resting baseline
 )

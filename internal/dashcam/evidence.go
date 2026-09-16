@@ -26,9 +26,9 @@ type EvidenceRunner struct {
 
 func NewEvidenceRunner(client *vss.Client, pool *pgxpool.Pool) *EvidenceRunner {
 	return &EvidenceRunner{
-		vss:    client,
-		pool:   pool,
-		every:  90 * time.Second,
+		vss:   client,
+		pool:  pool,
+		every: 90 * time.Second,
 		// Wide look-back: catches infrequent events and absorbs any timezone skew
 		// between our query window and the server's clock. Dedup on alarmGuid
 		// makes the repeated overlap idempotent.

@@ -567,48 +567,6 @@ type HistoryAlarm struct {
 	AlarmState int // 1 start, 0 end, 2 ongoing
 }
 
-// HistoryAlarms lists a device's alarms in [from,to] via apiFindAllByTime (§3.9)
-// — all alarms regardless of evidence. alarmType "" returns every type.
-func (c *Client) HistoryAlarms(ctx context.Context, deviceID string, from, to time.Time, alarmType string) ([]HistoryAlarm, error) {
-	const layout = "2006-01-02 15:04:05"
-	data, err := c.post(ctx, "/vss/alarm/apiFindAllByTime.action", map[string]any{
-		"deviceID":  deviceID,
-		"pageNum":   1,
-		"pageCount": -1, // -1 = all records
-		"beginTime": from.Format(layout),
-		"endTime":   to.Format(layout),
-		"alarmType": alarmType,
-	})
-	if err != nil {
-		return nil, err
-	}
-	var out struct {
-		DataList []struct {
-			Guid       string `json:"guid"`
-			AlarmType  any    `json:"alarmtype"`
-			AlarmGps   string `json:"alarmGps"`
-			CreateTime string `json:"createtime"`
-			Speed      any    `json:"speed"`
-			AlarmState int    `json:"alarmState"`
-		} `json:"dataList"`
-	}
-	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, fmt.Errorf("vss history alarms: decode: %w", err)
-	}
-	res := make([]HistoryAlarm, 0, len(out.DataList))
-	for _, d := range out.DataList {
-		a := HistoryAlarm{Guid: d.Guid, AlarmType: toInt(d.AlarmType), CreateTime: d.CreateTime, AlarmState: d.AlarmState}
-		if lon, lat, ok := parseLonLat(d.AlarmGps); ok {
-			a.Lat, a.Lon = &lat, &lon
-		}
-		if s, ok := toFloat(d.Speed); ok {
-			a.Speed = &s
-		}
-		res = append(res, a)
-	}
-	return res, nil
-}
-
 // parseLonLat parses VSS's "lon,lat" alarmGps string (longitude first). "0,0"
 // and unparseable strings return ok=false so a fixless alarm is not plotted.
 func parseLonLat(s string) (lon, lat float64, ok bool) {

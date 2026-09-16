@@ -58,9 +58,9 @@ func TestParseAlarmIgnoresNonAlarmActions(t *testing.T) {
 
 func TestWSURLDerivation(t *testing.T) {
 	cases := map[string]string{
-		"http://vss.gtrack.co.id:9966":  "ws://vss.gtrack.co.id:36300/ws",
-		"https://vss.example.com":       "wss://vss.example.com:36301/ws",
-		"http://10.0.0.5:9966/":         "ws://10.0.0.5:36300/ws",
+		"http://vss.gtrack.co.id:9966": "ws://vss.gtrack.co.id:36300/ws",
+		"https://vss.example.com":      "wss://vss.example.com:36301/ws",
+		"http://10.0.0.5:9966/":        "ws://10.0.0.5:36300/ws",
 	}
 	for base, want := range cases {
 		c := New(Config{BaseURL: base, Username: "u", Password: "p"})

@@ -26,25 +26,25 @@ import (
 
 // legacyRec mirrors a record in the Mongo export. Only fields we keep are typed.
 type legacyRec struct {
-	IMEITracker   string   `json:"imeiTracker"`
-	Latitude      *float64 `json:"latitude"`
-	Longitude     *float64 `json:"longitude"`
-	Altitude      *float64 `json:"altitude"`
-	Speed         *float64 `json:"speed"`
-	Bearing       *float64 `json:"bearing"`
-	Sat           *int     `json:"sat"`
-	BatteryStatus string   `json:"batteryStatus"`
-	BatteryLevel  *float64 `json:"batteryLevel"`
-	Status        string   `json:"status"`
-	HDOP          *float64 `json:"HDOP"`
-	PDOP          *float64 `json:"PDOP"`
-	GpsOn         *bool    `json:"gpsOn"`
-	FakeGps       *bool    `json:"fakeGps"`
+	IMEITracker   string      `json:"imeiTracker"`
+	Latitude      *float64    `json:"latitude"`
+	Longitude     *float64    `json:"longitude"`
+	Altitude      *float64    `json:"altitude"`
+	Speed         *float64    `json:"speed"`
+	Bearing       *float64    `json:"bearing"`
+	Sat           *int        `json:"sat"`
+	BatteryStatus string      `json:"batteryStatus"`
+	BatteryLevel  *float64    `json:"batteryLevel"`
+	Status        string      `json:"status"`
+	HDOP          *float64    `json:"HDOP"`
+	PDOP          *float64    `json:"PDOP"`
+	GpsOn         *bool       `json:"gpsOn"`
+	FakeGps       *bool       `json:"fakeGps"`
 	ErrorDesc     flexStrings `json:"errorDesc"`
-	TrackingCount *int      `json:"trackingCount"`
-	Truck         mongoID   `json:"truck"`
-	TimeReceived  mongoTime `json:"timeReceived"` // preferred event time (newer schema)
-	CreatedAt     mongoTime `json:"createdAt"`    // fallback event time (older 2023/2024 schema has no timeReceived)
+	TrackingCount *int        `json:"trackingCount"`
+	Truck         mongoID     `json:"truck"`
+	TimeReceived  mongoTime   `json:"timeReceived"` // preferred event time (newer schema)
+	CreatedAt     mongoTime   `json:"createdAt"`    // fallback event time (older 2023/2024 schema has no timeReceived)
 }
 
 // mongoTime unmarshals a timestamp in any shape the exports use: a plain RFC3339
@@ -158,7 +158,7 @@ type Migrator struct {
 
 // FileResult summarizes one processed source file.
 type FileResult struct {
-	Key     string
+	Key        string
 	Skipped    bool // already done (resume marker present)
 	Rows       int
 	Dates      int

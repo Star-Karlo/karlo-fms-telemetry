@@ -36,11 +36,11 @@ func validLatLon(lat, lon float64) bool {
 // (GPS tracker), `driver` (mobile app), or BOTH — send both when you don't know
 // which one is currently reporting and the freshest live fix wins.
 type GeofenceCheck struct {
-	IMEI      string   `json:"imei,omitempty" example:"350612071419004"`         // GPS tracker; its latest live position
+	IMEI      string   `json:"imei,omitempty" example:"350612071419004"`            // GPS tracker; its latest live position
 	Driver    string   `json:"driver,omitempty" example:"649019ee6c7c280f4e46d0a2"` // mobile-app driver id; its latest live position
-	CenterLat float64  `json:"center_lat" example:"-6.2"`                        // warehouse center latitude
-	CenterLon float64  `json:"center_lon" example:"106.8"`                       // warehouse center longitude
-	RadiusM   *float64 `json:"radius_m,omitempty" example:"8000"`                // optional; if set, `inside` = distance_m <= radius_m
+	CenterLat float64  `json:"center_lat" example:"-6.2"`                           // warehouse center latitude
+	CenterLon float64  `json:"center_lon" example:"106.8"`                          // warehouse center longitude
+	RadiusM   *float64 `json:"radius_m,omitempty" example:"8000"`                   // optional; if set, `inside` = distance_m <= radius_m
 }
 
 // GeofenceRequest is the batch body for POST /v1/geofence/check.
@@ -51,10 +51,10 @@ type GeofenceRequest struct {
 // GeofenceResult is one check's answer. distance_m is the real output — the
 // caller applies its own distance bands (arrive/out/enter) on it.
 type GeofenceResult struct {
-	IMEI      string     `json:"imei,omitempty"`   // echoed from the request
-	Driver    string     `json:"driver,omitempty"` // echoed from the request
-	Source    string     `json:"source,omitempty"` // which identity supplied the position: "gps" | "mobile"
-	Found     bool       `json:"found"`            // false if neither identity has a live position
+	IMEI      string     `json:"imei,omitempty"`       // echoed from the request
+	Driver    string     `json:"driver,omitempty"`     // echoed from the request
+	Source    string     `json:"source,omitempty"`     // which identity supplied the position: "gps" | "mobile"
+	Found     bool       `json:"found"`                // false if neither identity has a live position
 	DistanceM *float64   `json:"distance_m,omitempty"` // metres from the point to the center
 	Inside    *bool      `json:"inside,omitempty"`     // present only when radius_m was given
 	Lat       *float64   `json:"lat,omitempty"`        // the position used

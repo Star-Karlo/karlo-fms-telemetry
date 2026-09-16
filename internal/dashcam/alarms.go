@@ -1,77 +1,10 @@
 package dashcam
 
 import (
-	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/karlo/fms/internal/vss"
 )
-
-// AlarmRunner holds the live VSS WebSocket subscription and persists every
-// alarm it receives. One long-lived goroutine per service; FMS reads the table
-// through the /v1/dashcams/alarms endpoint rather than holding its own socket.
-type AlarmRunner struct {
-	vss  *vss.Client
-	pool *pgxpool.Pool
-}
-
-// NewAlarmRunner builds the runner.
-func NewAlarmRunner(client *vss.Client, pool *pgxpool.Pool) *AlarmRunner {
-	return &AlarmRunner{vss: client, pool: pool}
-}
-
-// Run maintains the subscription until ctx is cancelled, reconnecting with
-// backoff. A no-op when VSS is not configured, so a deployment without cameras
-// opens no socket. Reconnection is HERE, not in the client, so the backoff and
-// the "why did the feed stop" logging live in one place.
-func (r *AlarmRunner) Run(ctx context.Context) {
-	if !r.vss.Enabled() {
-		return
-	}
-	backoff := 2 * time.Second
-	const maxBackoff = 2 * time.Minute
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		err := r.vss.SubscribeAlarms(ctx, r.store)
-		if ctx.Err() != nil {
-			return
-		}
-		// The socket ended. Log why, wait, reconnect. Backoff caps so a server
-		// outage does not spin, and resets on the next clean connection.
-		log.Printf("dashcam alarms: subscription ended (%v); reconnecting in %s", err, backoff)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(backoff):
-		}
-		if backoff *= 2; backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-	}
-}
-
-// store writes one received alarm, ignoring a duplicate (same VSS event id).
-func (r *AlarmRunner) store(a vss.Alarm) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	raw := json.RawMessage(a.Raw)
-	_, err := r.pool.Exec(ctx, `
-INSERT INTO dashcam_alarms (device_id, alarm_id, code, occurred_at, lat, lon, speed, gforce, raw)
-VALUES ($1, NULLIF($2,''), $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (alarm_id) WHERE alarm_id IS NOT NULL DO NOTHING`,
-		a.DeviceID, a.AlarmID, a.Code, a.OccurredAt, a.Lat, a.Lon, a.Speed, a.Gforce, raw)
-	if err != nil {
-		log.Printf("dashcam alarms: store %s/%s: %v", a.DeviceID, a.AlarmID, err)
-	}
-}
 
 // AlarmDTO is one stored alarm as the poll endpoint returns it.
 type AlarmDTO struct {
