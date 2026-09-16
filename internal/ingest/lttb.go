@@ -11,8 +11,8 @@ import (
 // unchanged when len <= threshold. Falls back to uniform stride sampling when
 // latitude isn't part of the projection.
 //
-// Used only for the COLD/merged segment — the hot segment is downsampled
-// in-database via TimescaleDB toolkit lttb() (see hotLTTB in read.go).
+// Used for both tiers: the cold segment from Athena and, since the move to
+// plain PostgreSQL, the hot segment too (see hotLTTB in read.go).
 func downsampleLTTB(points []map[string]any, threshold int) []map[string]any {
 	n := len(points)
 	if threshold < 3 || n <= threshold {

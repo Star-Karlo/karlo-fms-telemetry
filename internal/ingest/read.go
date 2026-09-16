@@ -332,31 +332,28 @@ func (rd *Reader) hotHistoryProjected(ctx context.Context, imei string, lower, u
 	return scanProjected(rows)
 }
 
-// hotLTTB downsamples the hot segment in-database to ~n shape-preserving points
-// via TimescaleDB toolkit lttb() (driven on latitude), returning the projected
-// columns for the selected fixes. lttb() naturally returns <= the raw count, so
-// short ranges come back whole.
+// hotLTTB downsamples the hot segment to ~n shape-preserving points, driven on
+// latitude. The rows are fetched projected and reduced in Go with the same
+// LTTB the cold tier uses. It used to run TimescaleDB Toolkit's lttb() inside
+// the query; the telemetry database is plain PostgreSQL on RDS since
+// 2026-09-16 and has no such function (every max_points history read failed
+// with "query failed" for the first hour after the cutover). The fetch is
+// capped well above a week of one vehicle's fixes so nothing silently
+// truncates; ~50k projected rows is a few MB.
 func (rd *Reader) hotLTTB(ctx context.Context, imei string, lower, upper time.Time, lowerStrict bool, proj projection, n int) ([]map[string]any, error) {
 	if n < 2 {
 		n = 2
 	}
-	loOp := ">="
-	if lowerStrict {
-		loOp = ">"
-	}
-	q := `WITH s AS (
-	        SELECT (unnest(lttb(time, ST_Y(geom::geometry), $4))).time AS t
-	        FROM telemetry
-	        WHERE imei = $1 AND time ` + loOp + ` $2 AND time <= $3)
-	      SELECT ` + proj.hotSelect() + ` FROM telemetry
-	      WHERE imei = $1 AND time IN (SELECT t FROM s) ORDER BY time`
-	rows, err := rd.pool.Query(ctx, q, imei, lower, upper, n)
+	pts, err := rd.hotHistoryProjected(ctx, imei, lower, upper, lowerStrict, proj, lttbFetchCap)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanProjected(rows)
+	return downsampleLTTB(pts, n), nil
 }
+
+// lttbFetchCap bounds the raw rows hotLTTB pulls before downsampling: a fix
+// every ~10 s for 8 days is ~70k, so this only ever bites on runaway ranges.
+const lttbFetchCap = 200000
 
 // HistoryProjected serves history with field projection and/or LTTB downsampling.
 // maxPoints > 0 ⇒ downsample the whole range (no pagination); otherwise it mirrors
@@ -693,6 +690,7 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := h.r.HistoryProjected(r.Context(), imei, from, to, cursor, limit, proj, maxPoints)
 	if err != nil {
+		log.Printf("history %s: %v", imei, err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 		return
 	}

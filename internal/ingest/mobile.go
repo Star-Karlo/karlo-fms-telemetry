@@ -310,28 +310,18 @@ func (m *MobileStore) hotHistory(ctx context.Context, driver string, lower, uppe
 	return scanMobile(rows)
 }
 
-// hotLTTB downsamples the hot segment in-database (TimescaleDB toolkit), driven
-// on latitude — same approach as the GPS history endpoint.
+// hotLTTB fetches the hot segment and thins it to ~n points in Go — the same
+// path as the cold segment. (Was TimescaleDB Toolkit lttb() in SQL; the
+// database is plain PostgreSQL since 2026-09-16.)
 func (m *MobileStore) hotLTTB(ctx context.Context, driver string, lower, upper time.Time, lowerStrict bool, n int) ([]MobilePosition, error) {
 	if n < 2 {
 		n = 2
 	}
-	loOp := ">="
-	if lowerStrict {
-		loOp = ">"
-	}
-	q := `WITH s AS (
-	        SELECT (unnest(lttb(time, ST_Y(geom::geometry), $4))).time AS t
-	        FROM mobile_telemetry
-	        WHERE driver = $1 AND time ` + loOp + ` $2 AND time <= $3)
-	      SELECT ` + mobilePosCols + ` FROM mobile_telemetry
-	      WHERE driver = $1 AND time IN (SELECT t FROM s) ORDER BY time`
-	rows, err := m.pool.Query(ctx, q, driver, lower, upper, n)
+	ps, err := m.hotHistory(ctx, driver, lower, upper, lowerStrict, lttbFetchCap)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanMobile(rows)
+	return thinMobile(ps, n), nil
 }
 
 // History returns a page of a driver's track in (cursor|from .. to], ascending,
