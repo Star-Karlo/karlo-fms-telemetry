@@ -100,6 +100,7 @@ func main() {
 func maintainPartitions(ctx context.Context, pool *pgxpool.Pool, retentionDays int) {
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT to_regprocedure('partition_maintenance(text,int,int)') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+		log.Printf("partitions: no partition_maintenance() here (Timescale retention applies)")
 		return
 	}
 	keep := retentionDays + 1 // the same one-day lag the Timescale policy had
@@ -109,13 +110,16 @@ func maintainPartitions(ctx context.Context, pool *pgxpool.Pool, retentionDays i
 			log.Printf("WARN partition maintenance %s: %v", tbl, err)
 			continue
 		}
+		n := 0
 		for rows.Next() {
 			var action, name string
 			if rows.Scan(&action, &name) == nil {
 				log.Printf("partitions: %s %s", action, name)
+				n++
 			}
 		}
 		rows.Close()
+		log.Printf("partitions: %s maintained (keep %d days, %d changes)", tbl, keep, n)
 	}
 }
 
