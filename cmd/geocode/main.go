@@ -59,7 +59,20 @@ func main() {
 	svc.Routes(r)
 
 	log.Printf("geocode service on %s  (swagger: http://localhost%s/swagger/index.html)", addr, addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	// Bounded server: a client that opens a connection and never finishes its
+	// headers, or trickles a body, must not hold a worker forever (slowloris).
+	// WriteTimeout is generous because history and report responses are big;
+	// long-running work (report render, clip download) is asynchronous anyway.
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       90 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func env(k, def string) string {

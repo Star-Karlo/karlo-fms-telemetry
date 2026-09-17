@@ -64,8 +64,11 @@ func (h *Handler) Routes(r chi.Router) {
 	// write — each handler checks the key itself, because a device that
 	// presents a per-device key is authorised differently from a service
 	// presenting the shared one.
-	r.Post("/v1/ingest", h.handleIngest)
-	r.Post("/v1/ingest/mobile", h.handleMobileIngest)
+	// Bodies are bounded: the largest legitimate batch (a tracker flushing a
+	// day's buffer) is a few hundred KB. Anything larger is a mistake or an
+	// attack, and MaxBytesReader turns it into a 413 instead of a memory spike.
+	r.With(bodyLimit(4<<20)).Post("/v1/ingest", h.handleIngest)
+	r.With(bodyLimit(4<<20)).Post("/v1/ingest/mobile", h.handleMobileIngest)
 
 	// READS REQUIRE THE KEY TOO.
 	//
@@ -187,4 +190,14 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// bodyLimit caps a request body; the JSON decoder then fails cleanly past it.
+func bodyLimit(n int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, n)
+			next.ServeHTTP(w, r)
+		})
+	}
 }
