@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -93,7 +94,8 @@ func main() {
 	}
 	mob := ingest.NewMobileStore(pool, mobileCold, retentionDays)
 
-	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), mob, ingest.NewGreenStore(pool), apiKey, keys)
+	h := ingest.NewHandler(geoSvc, ingest.NewWriter(pool), ingest.NewReader(pool, cold, retentionDays), mob, ingest.NewGreenStore(pool), apiKey, keys).
+		WithServiceTokens(strings.Split(env("ACCEPTED_SERVICE_TOKENS", ""), ","))
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -113,7 +115,7 @@ func main() {
 		Password: env("VSS_PASSWORD", ""),
 	})
 	videoBucket := env("VIDEO_S3_BUCKET", env("S3_BUCKET", "karlo-fms-cold-storage"))
-	dashcam.NewHandler(vssClient, h.Authorized, videoBucket, pool).Routes(r)
+	dashcam.NewHandler(vssClient, h.AuthorizedRead, videoBucket, pool).Routes(r)
 
 	// Coverage/terrain spatial grid: nightly rollup of signal + ruggedness, plus
 	// the read endpoint. Seeds the hot window on startup, then rolls up daily.

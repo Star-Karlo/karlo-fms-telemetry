@@ -38,7 +38,7 @@ import (
 
 // AuthFunc reports whether a presented X-Ingest-Key is valid. Passed in rather
 // than reimplemented so there is one auth path in the service.
-type AuthFunc func(ctx context.Context, presentedKey string) bool
+type AuthFunc func(r *http.Request) bool
 
 // Handler serves the dashcam endpoints.
 type Handler struct {
@@ -77,8 +77,8 @@ func (h *Handler) Routes(r chi.Router) {
 
 func (h *Handler) gated(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !h.auth(r.Context(), r.Header.Get("X-Ingest-Key")) {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or missing X-Ingest-Key"})
+		if !h.auth(r) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing or invalid X-Ingest-Key or service token"})
 			return
 		}
 		next(w, r)

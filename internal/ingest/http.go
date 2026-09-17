@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -25,10 +26,40 @@ type Handler struct {
 	green  *GreenStore  // tracker Green Driving events; see green.go
 	apiKey string       // legacy shared secret; still accepted when set
 	keys   *KeyStore    // revocable per-sender keys (ingest_key table)
+	// serviceTokens: the platform's service-to-service tokens (secret
+	// karlo-prod/service-tokens, key "all"). A peer service inside the VPC —
+	// TMS business, fms-api — reads telemetry with `Authorization: Bearer
+	// <its token>` instead of a shared ingest key, the same credential it
+	// uses on every other internal call. Reads only: devices still write
+	// with an ingest key.
+	serviceTokens map[string]struct{}
 }
 
 func NewHandler(geo *geocode.Service, w *Writer, reader *Reader, mob *MobileStore, green *GreenStore, apiKey string, keys *KeyStore) *Handler {
-	return &Handler{geo: geo, w: w, r: reader, mob: mob, green: green, apiKey: apiKey, keys: keys}
+	return &Handler{geo: geo, w: w, r: reader, mob: mob, green: green, apiKey: apiKey, keys: keys, serviceTokens: map[string]struct{}{}}
+}
+
+// WithServiceTokens accepts these bearer tokens on the read endpoints.
+func (h *Handler) WithServiceTokens(tokens []string) *Handler {
+	for _, t := range tokens {
+		if t = strings.TrimSpace(t); t != "" {
+			h.serviceTokens[t] = struct{}{}
+		}
+	}
+	return h
+}
+
+// AuthorizedRead reports whether a request may READ telemetry: an ingest key
+// (devices, legacy callers) or a platform service token as a bearer.
+func (h *Handler) AuthorizedRead(r *http.Request) bool {
+	if h.authorized(r.Context(), r.Header.Get("X-Ingest-Key")) {
+		return true
+	}
+	if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		_, ok := h.serviceTokens[strings.TrimSpace(tok)]
+		return ok
+	}
+	return false
 }
 
 // authorized reports whether the request may write telemetry. A request passes
@@ -101,8 +132,8 @@ func (h *Handler) Routes(r chi.Router) {
 // using the same check the write path applies.
 func (h *Handler) requireKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !h.authorized(r.Context(), r.Header.Get("X-Ingest-Key")) {
-			http.Error(w, `{"error":"missing or invalid X-Ingest-Key"}`, http.StatusUnauthorized)
+		if !h.AuthorizedRead(r) {
+			http.Error(w, `{"error":"missing or invalid X-Ingest-Key or service token"}`, http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
