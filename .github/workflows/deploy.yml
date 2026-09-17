@@ -1,0 +1,75 @@
+# Production deploy for the telemetry service — MANUAL ONLY, Jakarta only.
+#
+# One image (SERVICE=ingest) carries /app, /archiver and /telmigrate; the
+# geocode service is its own build. Every task definition is pinned to this
+# commit's tag by a fresh revision (the platform's ECR tags are immutable),
+# then ingest and geocode are rolled and waited on. Nothing here can register
+# a revision for a tag that was not pushed: each step fails the job.
+name: deploy-telemetry
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY (capitals) to confirm a PRODUCTION deploy'
+        required: true
+        default: ''
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-southeast-3
+  CLUSTER: karlo-prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm
+        run: |
+          [ "${{ inputs.confirm }}" = "DEPLOY" ] || { echo "::error::Type DEPLOY to proceed."; exit 1; }
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build & push images
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for svc in ingest geocode; do
+            docker build --platform linux/amd64 --build-arg SERVICE=$svc -t "$REGISTRY/karlo/fms-$svc:$TAG" .
+            docker push "$REGISTRY/karlo/fms-$svc:$TAG"
+          done
+      - name: Register revisions
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          INGEST="$REGISTRY/karlo/fms-ingest:$TAG"
+          echo "ingest=$(bash scripts/register-revision.sh karlo-prod-fms-ingest "$INGEST")" >> "$GITHUB_OUTPUT"
+          echo "geocode=$(bash scripts/register-revision.sh karlo-prod-fms-geocode "$REGISTRY/karlo/fms-geocode:$TAG")" >> "$GITHUB_OUTPUT"
+          bash scripts/register-revision.sh karlo-prod-fms-archiver "$INGEST" >/dev/null
+          bash scripts/register-revision.sh karlo-prod-fms-dbtool "$INGEST" >/dev/null
+        id: rev
+      - name: Roll services
+        run: |
+          set -euo pipefail
+          aws ecs update-service --cluster "$CLUSTER" --service karlo-prod-fms-ingest --task-definition "karlo-prod-fms-ingest:${{ steps.rev.outputs.ingest }}" >/dev/null
+          aws ecs update-service --cluster "$CLUSTER" --service karlo-prod-fms-geocode --task-definition "karlo-prod-fms-geocode:${{ steps.rev.outputs.geocode }}" >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services karlo-prod-fms-ingest karlo-prod-fms-geocode
+      - name: Smoke
+        run: |
+          set -euo pipefail
+          for u in https://fms-tracking.karlo.id/healthz; do
+            c=$(curl -s -o /dev/null -w "%{http_code}" "$u"); echo "$u $c"; [ "$c" = 200 ]
+          done
