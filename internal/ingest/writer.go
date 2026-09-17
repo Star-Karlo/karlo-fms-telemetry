@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -52,8 +53,38 @@ ON CONFLICT (imei) DO UPDATE SET
   bearing = excluded.bearing, speed = excluded.speed, ignition = excluded.ignition,
   kecamatan = excluded.kecamatan, kelurahan = excluded.kelurahan,
   kabupaten = excluded.kabupaten, kota = excluded.kota,
-  provinsi = excluded.provinsi, jalan = excluded.jalan, metadata = excluded.metadata
+  provinsi = excluded.provinsi, jalan = excluded.jalan,
+  -- Fuel level carries forward. Trackers that read the tank through an LLS
+  -- or CAN only include it while the engine runs; the "on stop" records
+  -- omit it, and the current-state row would show a truck with no fuel
+  -- sensor every night. Keep the last reading (and _fuel_at, stamped by the
+  -- writer when a reading arrives) until a fresher one replaces it. The
+  -- history rows stay raw.
+  metadata = excluded.metadata || COALESCE(
+    (SELECT jsonb_object_agg(k, v) FROM jsonb_each(latest.metadata) AS e(k, v)
+      WHERE k IN ('Fuel Level', 'Fuel Level (CAN)', '_fuel_at') AND NOT (excluded.metadata ? k)),
+    '{}'::jsonb)
 WHERE excluded.time > latest.time`
+
+// fuelKeys are the metadata keys that carry a tank reading, in the shape the
+// adapters normalise them to.
+var fuelKeys = []string{"Fuel Level", "Fuel Level (CAN)"}
+
+// stampFuel adds _fuel_at (the fix time, RFC3339 UTC) when the reading
+// carries a fuel level, so a carried-forward value can say how old it is.
+func stampFuel(md map[string]any, at time.Time) map[string]any {
+	for _, k := range fuelKeys {
+		if _, ok := md[k]; ok {
+			out := make(map[string]any, len(md)+1)
+			for kk, vv := range md {
+				out[kk] = vv
+			}
+			out["_fuel_at"] = at.UTC().Format(time.RFC3339)
+			return out
+		}
+	}
+	return md
+}
 
 func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 	if len(rows) == 0 {
@@ -62,7 +93,7 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 
 	batch := &pgx.Batch{}
 	for _, r := range rows {
-		meta, err := json.Marshal(r.Reading.Metadata)
+		meta, err := json.Marshal(stampFuel(r.Reading.Metadata, r.Reading.GPSTime))
 		if err != nil {
 			return fmt.Errorf("marshal metadata: %w", err)
 		}
