@@ -91,7 +91,21 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 		return nil
 	}
 
+	// History only accepts fixes inside the partition window (retention
+	// days back, a few days ahead — partition_maintenance keeps 8 and 3).
+	// Outside it, INSERT fails with "no partition … found" and, because a
+	// batch is one transaction, took every other row down with it: on
+	// 2026-09-17 one GMT truck whose last packet was 9 days old put all 20
+	// Raja Besi trucks offline for 14 hours. Such a row still refreshes the
+	// current-state row (the upsert ignores anything older than what it
+	// holds), it just is not appended to history.
+	now := time.Now()
+	inWindow := func(t time.Time) bool {
+		return t.After(now.AddDate(0, 0, -historyDaysBack)) && t.Before(now.AddDate(0, 0, historyDaysAhead))
+	}
+
 	batch := &pgx.Batch{}
+	queued := 0
 	for _, r := range rows {
 		meta, err := json.Marshal(stampFuel(r.Reading.Metadata, r.Reading.GPSTime))
 		if err != nil {
@@ -106,13 +120,17 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 			nullStr(r.Kota), nullStr(r.Provinsi), nullStr(r.Jalan),
 			string(meta),
 		}
-		batch.Queue(insertSQL, args...)       // historical (append)
+		if inWindow(r.Reading.GPSTime) {
+			batch.Queue(insertSQL, args...) // historical (append)
+			queued++
+		}
 		batch.Queue(upsertLatestSQL, args...) // current state (conditional upsert)
+		queued++
 	}
 
 	br := w.pool.SendBatch(ctx, batch)
 	var firstErr error
-	for i := 0; i < len(rows)*2; i++ { // two statements queued per row
+	for i := 0; i < queued; i++ {
 		if _, err := br.Exec(); err != nil && firstErr == nil {
 			firstErr = err
 		}
@@ -120,8 +138,27 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 	if err := br.Close(); err != nil && firstErr == nil {
 		firstErr = err
 	}
-	return firstErr
+	if firstErr == nil || len(rows) == 1 {
+		return firstErr
+	}
+	// The batch failed as a whole. Retry one row at a time so a single bad
+	// reading costs itself, not the other 19 trucks; report the first error.
+	var rowErr error
+	for i := range rows {
+		if err := w.WriteBatch(ctx, rows[i:i+1]); err != nil && rowErr == nil {
+			rowErr = fmt.Errorf("%w (batch of %d retried row by row)", err, len(rows))
+		}
+	}
+	return rowErr
 }
+
+// historyDaysBack / historyDaysAhead mirror partition_maintenance(tbl, 8, 3)
+// with a day of slack on the old side so a fix from exactly 8 days ago,
+// arriving before tonight's drop, is still accepted.
+const (
+	historyDaysBack  = 7
+	historyDaysAhead = 3
+)
 
 func nullStr(s string) *string {
 	if s == "" {

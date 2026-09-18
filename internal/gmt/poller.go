@@ -22,10 +22,15 @@ type Poller struct {
 	geo      *geocode.Service
 	w        *ingest.Writer
 	interval time.Duration
+	// lastSeen: the packet time last written per IMEI. GMT answers the
+	// same status until the truck sends again, and writing it every 90 s
+	// was 960 identical history rows a day per idle truck (and, for a truck
+	// silent for over a week, a row no partition would take).
+	lastSeen map[string]time.Time
 }
 
 func NewPoller(client *Client, geo *geocode.Service, w *ingest.Writer) *Poller {
-	return &Poller{client: client, geo: geo, w: w, interval: DefaultInterval}
+	return &Poller{client: client, geo: geo, w: w, interval: DefaultInterval, lastSeen: map[string]time.Time{}}
 }
 
 // Run blocks, polling until ctx is cancelled. A no-op (logged) when no API key
@@ -91,9 +96,14 @@ func (p *Poller) tick(ctx context.Context) {
 		if len(s.Temperature) > 0 {
 			meta["temperature"] = s.Temperature
 		}
+		gpsTime := parseTime(s.LastPacket, now)
+		if !gpsTime.After(p.lastSeen[imei]) {
+			continue // nothing new from this truck since the last poll
+		}
+		p.lastSeen[imei] = gpsTime
 		readings = append(readings, ingest.Reading{
 			IMEI:       imei,
-			GPSTime:    parseTime(s.LastPacket, now),
+			GPSTime:    gpsTime,
 			ReceivedAt: now,
 			Lat:        s.Latitude,
 			Lon:        s.Longitude,
@@ -104,14 +114,19 @@ func (p *Poller) tick(ctx context.Context) {
 		})
 	}
 	if len(readings) == 0 {
-		return
+		return // every truck unchanged since last poll
 	}
 	n, err := ingest.WriteReadings(cctx, p.geo, p.w, readings)
 	if err != nil {
 		log.Printf("gmt: write %d readings: %v", len(readings), err)
+		// Let the next poll try these again rather than remembering a
+		// write that did not happen.
+		for _, r := range readings {
+			delete(p.lastSeen, r.IMEI)
+		}
 		return
 	}
-	log.Printf("gmt: stored %d/%d vehicle statuses", n, len(statuses))
+	log.Printf("gmt: stored %d/%d vehicle statuses (%d unchanged)", n, len(statuses), len(statuses)-len(readings))
 }
 
 // normalizeIMEI takes GMT's device id (e.g. "353742378917173_1") down to the
