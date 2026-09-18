@@ -29,7 +29,9 @@ func main() {
 	}
 
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/fms"))
+	// DATABASE_URL, or DST_DSN so the tool also runs inside the dbtool task
+	// (whose secret of that name is the telemetry database as admin).
+	pool, err := pgxpool.New(ctx, env("DATABASE_URL", env("DST_DSN", "postgres://postgres:postgres@localhost:5432/fms")))
 	if err != nil {
 		log.Fatalf("db connect: %v", err)
 	}

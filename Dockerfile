@@ -13,8 +13,9 @@ ARG SERVICE
 RUN test -n "$SERVICE" || (echo "SERVICE build-arg required" && exit 1)
 RUN CGO_ENABLED=0 go build -trimpath -o /out/app ./cmd/${SERVICE} \
  && CGO_ENABLED=0 go build -trimpath -o /out/archiver ./cmd/archiver \
- && CGO_ENABLED=0 go build -trimpath -o /out/telmigrate ./cmd/telmigrate
+ && CGO_ENABLED=0 go build -trimpath -o /out/telmigrate ./cmd/telmigrate \
+ && CGO_ENABLED=0 go build -trimpath -o /out/ingestkey ./cmd/ingestkey
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/app /out/archiver /out/telmigrate /
+COPY --from=build /out/app /out/archiver /out/telmigrate /out/ingestkey /
 ENTRYPOINT ["/app"]
