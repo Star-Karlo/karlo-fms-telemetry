@@ -418,3 +418,15 @@ BEGIN
     EXECUTE format('SELECT setval(pg_get_serial_sequence(%L, ''id''), GREATEST((SELECT max(id) FROM %I), 1), (SELECT max(id) IS NOT NULL FROM %I))', t, t, t);
   END LOOP;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- Forward geocoding (/search): trigram indexes on the names the reverse
+-- geocoder already holds. pg_trgm is a stock RDS extension.
+-- ---------------------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_road_name_trgm ON road USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_kelurahan_kel_trgm ON kelurahan USING gin (kel_name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_kelurahan_kec_trgm ON kelurahan USING gin (kec_name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_kelurahan_kab_trgm ON kelurahan USING gin (kab_name gin_trgm_ops);
+-- The area search strips "Kota "/"Kabupaten " before matching; index that form too.
+CREATE INDEX IF NOT EXISTS idx_kelurahan_kab_bare_trgm ON kelurahan USING gin ((regexp_replace(kab_name, '^(Kota|Kabupaten) ', '')) gin_trgm_ops);

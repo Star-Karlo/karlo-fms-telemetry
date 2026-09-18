@@ -53,6 +53,21 @@ type Service struct {
 	cache     *Cache
 	precision uint          // geohash character length (7 ≈ 150m cells)
 	ttl       time.Duration // cache entry lifetime
+	// serviceTokens gate /search: it is for peer services (TMS business,
+	// fms-api) presenting their platform service token as a bearer. Empty =
+	// open (local runs). /reverse stays open: it has public callers.
+	serviceTokens map[string]struct{}
+}
+
+// WithServiceTokens sets the bearers /search accepts.
+func (s *Service) WithServiceTokens(tokens []string) *Service {
+	s.serviceTokens = map[string]struct{}{}
+	for _, t := range tokens {
+		if t = strings.TrimSpace(t); t != "" {
+			s.serviceTokens[t] = struct{}{}
+		}
+	}
+	return s
 }
 
 func NewService(store *Store, cache *Cache, precision uint, ttl time.Duration) *Service {

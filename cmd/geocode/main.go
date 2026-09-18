@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -47,7 +48,8 @@ func main() {
 		log.Fatalf("redis ping: %v", err)
 	}
 
-	svc := geocode.NewService(geocode.NewStore(pool), geocode.NewCache(rdb), precision, ttl)
+	svc := geocode.NewService(geocode.NewStore(pool), geocode.NewCache(rdb), precision, ttl).
+		WithServiceTokens(strings.Split(env("ACCEPTED_SERVICE_TOKENS", ""), ","))
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
