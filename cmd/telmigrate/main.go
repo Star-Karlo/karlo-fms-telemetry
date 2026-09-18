@@ -6,6 +6,7 @@
 //	telmigrate verify [days]     row counts on both sides
 //	telmigrate role              set telemetry_app's password from APP_DSN (the URL the services will use)
 //	telmigrate catchup FROM TO   AFTER cutover: append rows Tiger received in [FROM,TO) (RFC3339) that RDS lacks
+//	telmigrate indexes           build the forward-geocoding trigram indexes CONCURRENTLY on DST_DSN (safe on a live DB)
 //
 // Streaming COPY, one table at a time, and the two hypertables one DAY at a
 // time. A day is ~1.7 M rows; streaming keeps memory flat regardless, and
@@ -67,6 +68,8 @@ func main() {
 		verify(ctx, src, dst, days)
 	case "role":
 		setAppRole(ctx, dst, os.Getenv("APP_DSN"))
+	case "indexes":
+		buildIndexes(ctx, dst)
 	case "catchup":
 		if len(os.Args) < 4 {
 			log.Fatal("usage: telmigrate catchup <from RFC3339> <to RFC3339>")
@@ -88,6 +91,32 @@ func connect(ctx context.Context, dsn, what string) *pgx.Conn {
 		log.Fatalf("connect %s: %v", what, err)
 	}
 	return c
+}
+
+// buildIndexes creates the /search trigram indexes one statement at a time,
+// CONCURRENTLY, outside any transaction. The same statements sit in
+// schema.sql for a fresh database; on the LIVE one, running them inside the
+// schema's single implicit transaction deadlocked against ingest (a GIN
+// build takes a share lock on road/kelurahan while inserts and partition
+// maintenance hold locks of their own).
+func buildIndexes(ctx context.Context, dst string) {
+	c := connect(ctx, dst, "dst")
+	defer c.Close(ctx)
+	stmts := []string{
+		`CREATE EXTENSION IF NOT EXISTS pg_trgm`,
+		`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_road_name_trgm ON road USING gin (name gin_trgm_ops)`,
+		`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kelurahan_kel_trgm ON kelurahan USING gin (kel_name gin_trgm_ops)`,
+		`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kelurahan_kec_trgm ON kelurahan USING gin (kec_name gin_trgm_ops)`,
+		`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kelurahan_kab_trgm ON kelurahan USING gin (kab_name gin_trgm_ops)`,
+		`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_kelurahan_kab_bare_trgm ON kelurahan USING gin ((regexp_replace(kab_name, '^(Kota|Kabupaten) ', '')) gin_trgm_ops)`,
+	}
+	for _, st := range stmts {
+		start := time.Now()
+		if _, err := c.Exec(ctx, st); err != nil {
+			log.Fatalf("%s: %v", st[:40], err)
+		}
+		fmt.Printf("%-60.60s %s\n", st, time.Since(start).Round(time.Second))
+	}
 }
 
 // setAppRole gives telemetry_app the password carried in APP_DSN, then proves
