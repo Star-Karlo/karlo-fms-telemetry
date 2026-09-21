@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -252,6 +253,16 @@ func (m *MobileStore) LiveAll(ctx context.Context) ([]MobilePosition, error) {
 	return scanMobile(rows)
 }
 
+// LiveMany returns the latest row for each of the given drivers that has one.
+func (m *MobileStore) LiveMany(ctx context.Context, drivers []string) ([]MobilePosition, error) {
+	rows, err := m.pool.Query(ctx, `SELECT `+mobilePosCols+` FROM mobile_latest WHERE driver = ANY($1) ORDER BY driver`, drivers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMobile(rows)
+}
+
 func (m *MobileStore) LiveOne(ctx context.Context, driver string) (*MobilePosition, error) {
 	rows, err := m.pool.Query(ctx, `SELECT `+mobilePosCols+` FROM mobile_latest WHERE driver = $1`, driver)
 	if err != nil {
@@ -467,15 +478,42 @@ func (h *Handler) handleMobileIngest(w http.ResponseWriter, r *http.Request) {
 
 // handleMobileLiveAll godoc
 //
-//	@Summary	Latest position of every mobile driver
+//	@Summary	Latest position of mobile drivers (all, or a specific set)
+//	@Description	Returns the latest phone fix per driver. Use ?drivers= to restrict to a set — fms-backend asks only for the drivers assigned to vehicles that have no tracker or camera fix.
 //	@Tags		read
 //	@Produce	json
+//	@Param		drivers	query	string	false	"Comma-separated driver ids to return (omit for all). Max 5000."
 //	@Success	200	{array}	MobilePosition
+//	@Failure	400	{object}	map[string]string
 //	@Security	IngestKey
 //	@Security	ServiceToken
 //	@Router		/v1/mobile/live [get]
 func (h *Handler) handleMobileLiveAll(w http.ResponseWriter, r *http.Request) {
-	ps, err := h.mob.LiveAll(r.Context())
+	var drivers []string
+	if raw := r.URL.Query().Get("drivers"); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if !validIMEI(s) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid driver: " + s})
+				return
+			}
+			drivers = append(drivers, s)
+		}
+		if len(drivers) > maxLiveIMEIs {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many drivers (max 5000)"})
+			return
+		}
+	}
+	var ps []MobilePosition
+	var err error
+	if drivers != nil {
+		ps, err = h.mob.LiveMany(r.Context(), drivers)
+	} else {
+		ps, err = h.mob.LiveAll(r.Context())
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
 		return

@@ -1029,13 +1029,22 @@ const docTemplate = `{
                         "ServiceToken": []
                     }
                 ],
+                "description": "Returns the latest phone fix per driver. Use ?drivers= to restrict to a set — fms-backend asks only for the drivers assigned to vehicles that have no tracker or camera fix.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "read"
                 ],
-                "summary": "Latest position of every mobile driver",
+                "summary": "Latest position of mobile drivers (all, or a specific set)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated driver ids to return (omit for all). Max 5000.",
+                        "name": "drivers",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1043,6 +1052,15 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/ingest.MobilePosition"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
