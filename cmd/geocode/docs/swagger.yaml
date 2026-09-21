@@ -1,5 +1,36 @@
 basePath: /
 definitions:
+  geocode.Address:
+    properties:
+      kabupaten:
+        type: string
+      kecamatan:
+        type: string
+      kelurahan:
+        type: string
+      provinsi:
+        type: string
+    type: object
+  geocode.Candidate:
+    properties:
+      address:
+        $ref: '#/definitions/geocode.Address'
+      kind:
+        description: road | kelurahan | kecamatan | kabupaten
+        type: string
+      label:
+        description: display string, composed once for every caller
+        type: string
+      lat:
+        type: number
+      lon:
+        type: number
+      name:
+        type: string
+      score:
+        description: 0..1 match quality
+        type: number
+    type: object
   geocode.Result:
     properties:
       Kota:
@@ -66,4 +97,49 @@ paths:
       summary: Reverse geocode a coordinate to kecamatan / kota / provinsi
       tags:
       - geocode
+  /search:
+    get:
+      description: 'Searches the service''s own road and administrative-area data
+        (no external provider). "Jl. Raya Bekasi, Cikarang Utara": the part before
+        the first comma is the road or area, the rest narrows the area. Roads first,
+        then kelurahan / kecamatan / kabupaten. Not house-number precise. Requires
+        a platform service token as Bearer.'
+      parameters:
+      - description: query, at least 3 characters
+        example: Jl. Raya Bekasi, Cikarang
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: max candidates (default 10, max 25)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/geocode.Candidate'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ServiceToken: []
+      summary: 'Forward geocode: an address or place name to candidate pins (Indonesia)'
+      tags:
+      - geocode
+securityDefinitions:
+  ServiceToken:
+    description: Platform service token as "Bearer <token>" — /search is for peer
+      services (TMS business-service); /reverse stays open.
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

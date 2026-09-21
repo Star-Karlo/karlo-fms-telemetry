@@ -60,9 +60,108 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/search": {
+            "get": {
+                "security": [
+                    {
+                        "ServiceToken": []
+                    }
+                ],
+                "description": "Searches the service's own road and administrative-area data (no external provider). \"Jl. Raya Bekasi, Cikarang Utara\": the part before the first comma is the road or area, the rest narrows the area. Roads first, then kelurahan / kecamatan / kabupaten. Not house-number precise. Requires a platform service token as Bearer.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "geocode"
+                ],
+                "summary": "Forward geocode: an address or place name to candidate pins (Indonesia)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "Jl. Raya Bekasi, Cikarang",
+                        "description": "query, at least 3 characters",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "max candidates (default 10, max 25)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/geocode.Candidate"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "geocode.Address": {
+            "type": "object",
+            "properties": {
+                "kabupaten": {
+                    "type": "string"
+                },
+                "kecamatan": {
+                    "type": "string"
+                },
+                "kelurahan": {
+                    "type": "string"
+                },
+                "provinsi": {
+                    "type": "string"
+                }
+            }
+        },
+        "geocode.Candidate": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "$ref": "#/definitions/geocode.Address"
+                },
+                "kind": {
+                    "description": "road | kelurahan | kecamatan | kabupaten",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "display string, composed once for every caller",
+                    "type": "string"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "score": {
+                    "description": "0..1 match quality",
+                    "type": "number"
+                }
+            }
+        },
         "geocode.Result": {
             "type": "object",
             "properties": {
@@ -102,6 +201,14 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "ServiceToken": {
+            "description": "Platform service token as \"Bearer \u003ctoken\u003e\" — /search is for peer services (TMS business-service); /reverse stays open.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }`

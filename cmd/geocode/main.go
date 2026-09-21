@@ -4,6 +4,11 @@
 //	@version		0.1
 //	@description	Reverse geocoding: lat/lon -> kecamatan / kota / provinsi (PostGIS + Redis geohash cache).
 //	@BasePath		/
+//
+//	@securityDefinitions.apikey	ServiceToken
+//	@in							header
+//	@name						Authorization
+//	@description				Platform service token as "Bearer <token>" — /search is for peer services (TMS business-service); /reverse stays open.
 package main
 
 import (

@@ -22,7 +22,7 @@ func (s *Service) Routes(r chi.Router) {
 //	@Description	Searches the service's own road and administrative-area data (no external provider). "Jl. Raya Bekasi, Cikarang Utara": the part before the first comma is the road or area, the rest narrows the area. Roads first, then kelurahan / kecamatan / kabupaten. Not house-number precise. Requires a platform service token as Bearer.
 //	@Tags			geocode
 //	@Produce		json
-//	@Security		BearerAuth
+//	@Security		ServiceToken
 //	@Param			q		query		string	true	"query, at least 3 characters"	example(Jl. Raya Bekasi, Cikarang)
 //	@Param			limit	query		int		false	"max candidates (default 10, max 25)"
 //	@Success		200		{array}		Candidate
