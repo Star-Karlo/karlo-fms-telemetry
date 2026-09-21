@@ -4,6 +4,16 @@
 //	@version		0.1
 //	@description	Multi-vendor device telemetry intake. Devices POST readings; each is reverse-geocoded (kecamatan/kota/provinsi) and stored to the telemetry hypertable keyed by IMEI.
 //	@BasePath		/
+//
+//	@securityDefinitions.apikey	IngestKey
+//	@in							header
+//	@name						X-Ingest-Key
+//	@description				Per-vendor ingest key (minted with scripts/ingest-key.sh). Devices use it to POST; every read below requires it too.
+//
+//	@securityDefinitions.apikey	ServiceToken
+//	@in							header
+//	@name						Authorization
+//	@description				Platform service token as "Bearer <token>" — for peer services (fms-api, TMS business-service) reading telemetry.
 package main
 
 import (

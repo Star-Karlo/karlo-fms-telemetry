@@ -108,10 +108,11 @@ func (h *Handler) fail(w http.ResponseWriter, err error) {
 //	@Description	Fronts the VSS device list. Tenant-agnostic; FMS maps devices to vehicles and scopes by tenant.
 //	@Tags			dashcams
 //	@Produce		json
-//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
 //	@Param			q				query	string	false	"filter by device id/name"
 //	@Success		200	{array}		map[string]interface{}
 //	@Failure		503	{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/dashcams [get]
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	devices, err := h.vss.ListDevices(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")))
@@ -161,12 +162,13 @@ type Clip struct {
 //	@Description	Clips on the device SD card for the given day. Each clip is annotated with the position the dashcam's own GPS reported at the clip's start (derived — the vendor's clip list carries no coordinate).
 //	@Tags			dashcams
 //	@Produce		json
-//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
 //	@Param			deviceId		path	string	true	"VSS device id"
 //	@Param			date			query	string	true	"YYYY-MM-DD"
 //	@Param			channel			query	string	false	"channel list e.g. 1_2 (default all)"
 //	@Success		200	{array}		dashcam.Clip
 //	@Failure		400	{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/dashcams/{deviceId}/videos [get]
 func (h *Handler) videos(w http.ResponseWriter, r *http.Request) {
 	deviceID := chi.URLParam(r, "deviceId")
@@ -210,11 +212,12 @@ func (h *Handler) videos(w http.ResponseWriter, r *http.Request) {
 //	@Summary		Embeddable live-view URL
 //	@Tags			dashcams
 //	@Produce		json
-//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
 //	@Param			deviceId		path	string	true	"VSS device id"
 //	@Param			channel			query	string	false	"channel list e.g. 1_2"
 //	@Param			stream			query	string	false	"main|sub (default sub)"
 //	@Success		200	{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/dashcams/{deviceId}/live [get]
 func (h *Handler) live(w http.ResponseWriter, r *http.Request) {
 	deviceID := chi.URLParam(r, "deviceId")
@@ -242,10 +245,11 @@ type DownloadRequest struct {
 //	@Tags			dashcams
 //	@Accept			json
 //	@Produce		json
-//	@Param			X-Ingest-Key	header	string					true	"ingest API key"
 //	@Param			deviceId		path	string					true	"VSS device id"
 //	@Param			body			body	dashcam.DownloadRequest	true	"clip to pull"
 //	@Success		202	{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/dashcams/{deviceId}/download [post]
 func (h *Handler) startDownload(w http.ResponseWriter, r *http.Request) {
 	deviceID := chi.URLParam(r, "deviceId")
@@ -381,6 +385,8 @@ type EvidenceClip struct {
 //	@Param			deviceId	path	string	true	"vss device id"
 //	@Param			date		query	string	true	"YYYY-MM-DD"
 //	@Success		200	{array}	dashcam.EvidenceClip
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/dashcams/{deviceId}/evidence [get]
 func (h *Handler) evidence(w http.ResponseWriter, r *http.Request) {
 	deviceID := chi.URLParam(r, "deviceId")
@@ -437,6 +443,8 @@ type TrackPoint struct {
 //	@Param			from		query	string	true	"RFC3339"
 //	@Param			to			query	string	true	"RFC3339"
 //	@Success		200	{array}	dashcam.TrackPoint
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/dashcams/{deviceId}/track [get]
 func (h *Handler) track(w http.ResponseWriter, r *http.Request) {
 	deviceID := chi.URLParam(r, "deviceId")
@@ -559,10 +567,11 @@ func (h *Handler) fetchClip(ctx context.Context, fileURL string) (*http.Response
 //	@Summary	Poll a download job
 //	@Tags		dashcams
 //	@Produce	json
-//	@Param		X-Ingest-Key	header	string	true	"ingest API key"
 //	@Param		jobId			path	string	true	"job id"
 //	@Success	200	{object}	map[string]string
 //	@Failure	404	{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router		/v1/dashcams/downloads/{jobId} [get]
 func (h *Handler) downloadStatus(w http.ResponseWriter, r *http.Request) {
 	j, ok := h.jobs.get(chi.URLParam(r, "jobId"))

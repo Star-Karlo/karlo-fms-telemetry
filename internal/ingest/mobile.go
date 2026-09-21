@@ -424,11 +424,11 @@ func thinMobile(pts []MobilePosition, n int) []MobilePosition {
 //	@Tags			ingest
 //	@Accept			json
 //	@Produce		json
-//	@Param			X-Ingest-Key	header	string			false	"Shared ingest API key (required when the service is configured with one)"
 //	@Param			payload			body	[]MobileReading	true	"Array of readings (a single reading object is also accepted)"
 //	@Success		202	{object}	IngestResult
 //	@Failure		400	{object}	map[string]string
 //	@Failure		401	{object}	map[string]string
+//	@Security	IngestKey
 //	@Router			/v1/ingest/mobile [post]
 func (h *Handler) handleMobileIngest(w http.ResponseWriter, r *http.Request) {
 	if !h.authorized(r.Context(), r.Header.Get("X-Ingest-Key")) {
@@ -471,6 +471,8 @@ func (h *Handler) handleMobileIngest(w http.ResponseWriter, r *http.Request) {
 //	@Tags		read
 //	@Produce	json
 //	@Success	200	{array}	MobilePosition
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router		/v1/mobile/live [get]
 func (h *Handler) handleMobileLiveAll(w http.ResponseWriter, r *http.Request) {
 	ps, err := h.mob.LiveAll(r.Context())
@@ -489,6 +491,8 @@ func (h *Handler) handleMobileLiveAll(w http.ResponseWriter, r *http.Request) {
 //	@Param		driver	path		string	true	"Driver id"
 //	@Success	200		{object}	MobilePosition
 //	@Failure	404		{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router		/v1/mobile/live/{driver} [get]
 func (h *Handler) handleMobileLiveOne(w http.ResponseWriter, r *http.Request) {
 	driver := chi.URLParam(r, "driver")
@@ -521,6 +525,8 @@ func (h *Handler) handleMobileLiveOne(w http.ResponseWriter, r *http.Request) {
 //	@Param		max_points	query		int		false	"Downsample the range to ~N shape-preserving points (LTTB); bypasses pagination"
 //	@Success	200			{object}	MobileHistoryPage
 //	@Failure	400			{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router		/v1/mobile/history/{driver} [get]
 func (h *Handler) handleMobileHistory(w http.ResponseWriter, r *http.Request) {
 	driver := chi.URLParam(r, "driver")

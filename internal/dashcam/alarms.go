@@ -29,10 +29,11 @@ type AlarmDTO struct {
 //	@Description	Events received over the VSS WebSocket, id-ascending. Poll with since=<last id you saw>. Tenant-agnostic; FMS maps device_id to a vehicle and raises its own alert.
 //	@Tags			dashcams
 //	@Produce		json
-//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
 //	@Param			since			query	int		false	"return alarms with id greater than this (default 0)"
 //	@Param			limit			query	int		false	"max rows (default 200)"
 //	@Success		200	{array}	dashcam.AlarmDTO
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/dashcams/alarms [get]
 func (h *Handler) alarms(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)

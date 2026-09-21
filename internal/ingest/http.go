@@ -152,11 +152,11 @@ type IngestResult struct {
 //	@Tags			ingest
 //	@Accept			json
 //	@Produce		json
-//	@Param			X-Ingest-Key	header		string			false	"Shared ingest API key (required when the service is configured with one)"
 //	@Param			payload	body		GenericReading	true	"A reading (or a JSON array of readings)"
 //	@Success		202		{object}	IngestResult
 //	@Failure		400		{object}	map[string]string
 //	@Failure		401		{object}	map[string]string
+//	@Security	IngestKey
 //	@Router			/v1/ingest [post]
 func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 	// API-key gate: accepts the shared secret or any active ingest_key.

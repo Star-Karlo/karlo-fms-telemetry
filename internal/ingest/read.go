@@ -509,6 +509,8 @@ const maxLiveIMEIs = 5000
 //	@Param		fields	query	string	false	"Comma-separated columns to return (e.g. lat,lon,speed); omit for all. imei+time always included."
 //	@Success	200	{array}	Position
 //	@Failure	400	{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router		/v1/live [get]
 func (h *Handler) handleLiveAll(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -578,6 +580,8 @@ func (h *Handler) handleLiveAll(w http.ResponseWriter, r *http.Request) {
 //	@Param		imei	path		string	true	"Device IMEI"
 //	@Success	200		{object}	Position
 //	@Failure	404		{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router		/v1/live/{imei} [get]
 func (h *Handler) handleLiveOne(w http.ResponseWriter, r *http.Request) {
 	imei := chi.URLParam(r, "imei")
@@ -611,6 +615,8 @@ func (h *Handler) handleLiveOne(w http.ResponseWriter, r *http.Request) {
 //	@Param		max_points	query	int		false	"Downsample the whole range to ~N shape-preserving points (LTTB). When set, pagination is bypassed."
 //	@Success	200		{object}	HistoryPage
 //	@Failure	400		{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router		/v1/history/{imei} [get]
 func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 	imei := chi.URLParam(r, "imei")

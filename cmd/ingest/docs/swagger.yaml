@@ -59,6 +59,19 @@ definitions:
       stop:
         type: string
     type: object
+  dashcam.EvidenceClip:
+    properties:
+      channel:
+        type: integer
+      code:
+        type: integer
+      lat:
+        type: number
+      lon:
+        type: number
+      time:
+        type: string
+    type: object
   dashcam.TrackPoint:
     properties:
       lat:
@@ -417,11 +430,6 @@ paths:
       description: Fronts the VSS device list. Tenant-agnostic; FMS maps devices to
         vehicles and scopes by tenant.
       parameters:
-      - description: ingest API key
-        in: header
-        name: X-Ingest-Key
-        required: true
-        type: string
       - description: filter by device id/name
         in: query
         name: q
@@ -442,6 +450,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: List dashcam devices and their online state
       tags:
       - dashcams
@@ -452,11 +463,6 @@ paths:
       description: Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/.
         Returns a job id to poll; the finished job carries the S3 key FMS records.
       parameters:
-      - description: ingest API key
-        in: header
-        name: X-Ingest-Key
-        required: true
-        type: string
       - description: VSS device id
         in: path
         name: deviceId
@@ -477,17 +483,44 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Pull a clip to S3 (async)
+      tags:
+      - dashcams
+  /v1/dashcams/{deviceId}/evidence:
+    get:
+      description: Alarms that auto-uploaded an evidence clip, with their real time.
+      parameters:
+      - description: vss device id
+        in: path
+        name: deviceId
+        required: true
+        type: string
+      - description: YYYY-MM-DD
+        in: query
+        name: date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dashcam.EvidenceClip'
+            type: array
+      security:
+      - IngestKey: []
+      - ServiceToken: []
+      summary: A device's alarm evidence clips for a date
       tags:
       - dashcams
   /v1/dashcams/{deviceId}/live:
     get:
       parameters:
-      - description: ingest API key
-        in: header
-        name: X-Ingest-Key
-        required: true
-        type: string
       - description: VSS device id
         in: path
         name: deviceId
@@ -510,6 +543,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Embeddable live-view URL
       tags:
       - dashcams
@@ -543,6 +579,9 @@ paths:
             items:
               $ref: '#/definitions/dashcam.TrackPoint'
             type: array
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: A dashcam's own GPS track over a range
       tags:
       - dashcams
@@ -552,11 +591,6 @@ paths:
         with the position the dashcam's own GPS reported at the clip's start (derived
         — the vendor's clip list carries no coordinate).
       parameters:
-      - description: ingest API key
-        in: header
-        name: X-Ingest-Key
-        required: true
-        type: string
       - description: VSS device id
         in: path
         name: deviceId
@@ -586,6 +620,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: List a device's clips for a date, with coordinates
       tags:
       - dashcams
@@ -595,11 +632,6 @@ paths:
         since=<last id you saw>. Tenant-agnostic; FMS maps device_id to a vehicle
         and raises its own alert.
       parameters:
-      - description: ingest API key
-        in: header
-        name: X-Ingest-Key
-        required: true
-        type: string
       - description: return alarms with id greater than this (default 0)
         in: query
         name: since
@@ -617,17 +649,15 @@ paths:
             items:
               $ref: '#/definitions/dashcam.AlarmDTO'
             type: array
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Dashcam alarms since an id (for FMS to poll)
       tags:
       - dashcams
   /v1/dashcams/downloads/{jobId}:
     get:
       parameters:
-      - description: ingest API key
-        in: header
-        name: X-Ingest-Key
-        required: true
-        type: string
       - description: job id
         in: path
         name: jobId
@@ -648,6 +678,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Poll a download job
       tags:
       - dashcams
@@ -657,11 +690,6 @@ paths:
         Poll with since=<last id>. Tenant-agnostic; FMS maps IMEI to a vehicle and
         scores it.
       parameters:
-      - description: ingest API key
-        in: header
-        name: X-Ingest-Key
-        required: true
-        type: string
       - description: return events with id greater than this (default 0)
         in: query
         name: since
@@ -679,6 +707,9 @@ paths:
             items:
               $ref: '#/definitions/ingest.GreenEvent'
             type: array
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Tracker Green Driving events since an id (for FMS to poll)
       tags:
       - driving
@@ -731,6 +762,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Single radius check (convenience/testing)
       tags:
       - geofence
@@ -764,6 +798,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: 'Batch radius check: are these trucks within their circles?'
       tags:
       - geofence
@@ -815,6 +852,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Historical track for a device over a time range
       tags:
       - read
@@ -827,11 +867,6 @@ paths:
         object or a JSON array of them. Fields map to telemetry columns except those
         noted "-> metadata" (stored in the metadata jsonb).
       parameters:
-      - description: Shared ingest API key (required when the service is configured
-          with one)
-        in: header
-        name: X-Ingest-Key
-        type: string
       - description: A reading (or a JSON array of readings)
         in: body
         name: payload
@@ -857,6 +892,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
       summary: Ingest device telemetry (single reading or batch array)
       tags:
       - ingest
@@ -870,11 +907,6 @@ paths:
         server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in
         `io` and are kept in metadata.
       parameters:
-      - description: Shared ingest API key (required when the service is configured
-          with one)
-        in: header
-        name: X-Ingest-Key
-        type: string
       - description: Array of readings (a single reading object is also accepted)
         in: body
         name: payload
@@ -902,6 +934,8 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
       summary: Ingest mobile-app telemetry (single reading or batch array)
       tags:
       - ingest
@@ -934,6 +968,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Latest position of devices (all, or a specific set)
       tags:
       - read
@@ -958,6 +995,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Latest position of one device
       tags:
       - read
@@ -1003,6 +1043,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Historical track for a mobile driver over a time range
       tags:
       - read
@@ -1017,6 +1060,9 @@ paths:
             items:
               $ref: '#/definitions/ingest.MobilePosition'
             type: array
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Latest position of every mobile driver
       tags:
       - read
@@ -1041,6 +1087,9 @@ paths:
             additionalProperties:
               type: string
             type: object
+      security:
+      - IngestKey: []
+      - ServiceToken: []
       summary: Latest position of one mobile driver
       tags:
       - read
@@ -1081,4 +1130,17 @@ paths:
       summary: Daily per-device time-in-state and distance
       tags:
       - stats
+securityDefinitions:
+  IngestKey:
+    description: Per-vendor ingest key (minted with scripts/ingest-key.sh). Devices
+      use it to POST; every read below requires it too.
+    in: header
+    name: X-Ingest-Key
+    type: apiKey
+  ServiceToken:
+    description: Platform service token as "Bearer <token>" — for peer services (fms-api,
+      TMS business-service) reading telemetry.
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

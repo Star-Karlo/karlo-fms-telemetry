@@ -64,6 +64,14 @@ const docTemplate = `{
         },
         "/v1/dashcams": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "Fronts the VSS device list. Tenant-agnostic; FMS maps devices to vehicles and scopes by tenant.",
                 "produces": [
                     "application/json"
@@ -73,13 +81,6 @@ const docTemplate = `{
                 ],
                 "summary": "List dashcam devices and their online state",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "ingest API key",
-                        "name": "X-Ingest-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "filter by device id/name",
@@ -112,6 +113,14 @@ const docTemplate = `{
         },
         "/v1/dashcams/alarms": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "Events received over the VSS WebSocket, id-ascending. Poll with since=\u003clast id you saw\u003e. Tenant-agnostic; FMS maps device_id to a vehicle and raises its own alert.",
                 "produces": [
                     "application/json"
@@ -121,13 +130,6 @@ const docTemplate = `{
                 ],
                 "summary": "Dashcam alarms since an id (for FMS to poll)",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "ingest API key",
-                        "name": "X-Ingest-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "return alarms with id greater than this (default 0)",
@@ -156,6 +158,14 @@ const docTemplate = `{
         },
         "/v1/dashcams/downloads/{jobId}": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -164,13 +174,6 @@ const docTemplate = `{
                 ],
                 "summary": "Poll a download job",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "ingest API key",
-                        "name": "X-Ingest-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "job id",
@@ -203,6 +206,14 @@ const docTemplate = `{
         },
         "/v1/dashcams/{deviceId}/download": {
             "post": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/. Returns a job id to poll; the finished job carries the S3 key FMS records.",
                 "consumes": [
                     "application/json"
@@ -215,13 +226,6 @@ const docTemplate = `{
                 ],
                 "summary": "Pull a clip to S3 (async)",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "ingest API key",
-                        "name": "X-Ingest-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "VSS device id",
@@ -252,8 +256,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/dashcams/{deviceId}/evidence": {
+            "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
+                "description": "Alarms that auto-uploaded an evidence clip, with their real time.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "dashcams"
+                ],
+                "summary": "A device's alarm evidence clips for a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "vss device id",
+                        "name": "deviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dashcam.EvidenceClip"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/dashcams/{deviceId}/live": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -262,13 +321,6 @@ const docTemplate = `{
                 ],
                 "summary": "Embeddable live-view URL",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "ingest API key",
-                        "name": "X-Ingest-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "VSS device id",
@@ -304,6 +356,14 @@ const docTemplate = `{
         },
         "/v1/dashcams/{deviceId}/track": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "The device's GPS fixes, for a vehicle that has a camera but no\ntracker — so its trip history comes from the dashcam.",
                 "produces": [
                     "application/json"
@@ -350,6 +410,14 @@ const docTemplate = `{
         },
         "/v1/dashcams/{deviceId}/videos": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "Clips on the device SD card for the given day. Each clip is annotated with the position the dashcam's own GPS reported at the clip's start (derived — the vendor's clip list carries no coordinate).",
                 "produces": [
                     "application/json"
@@ -359,13 +427,6 @@ const docTemplate = `{
                 ],
                 "summary": "List a device's clips for a date, with coordinates",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "ingest API key",
-                        "name": "X-Ingest-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "VSS device id",
@@ -411,6 +472,14 @@ const docTemplate = `{
         },
         "/v1/driving-events": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "Harsh accel/brake/corner events from Teltonika trackers, id-ascending. Poll with since=\u003clast id\u003e. Tenant-agnostic; FMS maps IMEI to a vehicle and scores it.",
                 "produces": [
                     "application/json"
@@ -420,13 +489,6 @@ const docTemplate = `{
                 ],
                 "summary": "Tracker Green Driving events since an id (for FMS to poll)",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "ingest API key",
-                        "name": "X-Ingest-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "type": "integer",
                         "description": "return events with id greater than this (default 0)",
@@ -455,6 +517,14 @@ const docTemplate = `{
         },
         "/v1/geofence/check": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "Distance of one truck (imei), one mobile driver (driver), or an arbitrary point (lat/lon) to a center. Pass both imei and driver to use whichever has the fresher live fix. Returns the same fields as one batch result.",
                 "produces": [
                     "application/json"
@@ -528,6 +598,14 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "For each {imei and/or driver, center, radius}, returns the current distance to the center (and ` + "`" + `inside` + "`" + ` if radius given). Identity may be an ` + "`" + `imei` + "`" + ` (GPS tracker), a ` + "`" + `driver` + "`" + ` id (mobile app), or BOTH — send both when you don't know which is reporting and the freshest live fix wins; ` + "`" + `source` + "`" + ` tells you which was used. One request, one indexed lookup per identity type. The caller (platform) applies its own distance bands (arrive/out/enter) on distance_m. No live position → found:false.",
                 "consumes": [
                     "application/json"
@@ -571,6 +649,14 @@ const docTemplate = `{
         },
         "/v1/history/{imei}": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -644,6 +730,11 @@ const docTemplate = `{
         },
         "/v1/ingest": {
             "post": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    }
+                ],
                 "description": "Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted \"-\u003e metadata\" (stored in the metadata jsonb).",
                 "consumes": [
                     "application/json"
@@ -656,12 +747,6 @@ const docTemplate = `{
                 ],
                 "summary": "Ingest device telemetry (single reading or batch array)",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Shared ingest API key (required when the service is configured with one)",
-                        "name": "X-Ingest-Key",
-                        "in": "header"
-                    },
                     {
                         "description": "A reading (or a JSON array of readings)",
                         "name": "payload",
@@ -702,6 +787,11 @@ const docTemplate = `{
         },
         "/v1/ingest/mobile": {
             "post": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    }
+                ],
                 "description": "Same canonical shape as /v1/ingest but keyed by ` + "`" + `driver` + "`" + ` instead of ` + "`" + `imei` + "`" + ` (a phone has no IMEI). Each reading is reverse-geocoded to kecamatan/kelurahan/kota/provinsi/jalan and stored to the mobile_telemetry hypertable. received_at is stamped by the server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in ` + "`" + `io` + "`" + ` and are kept in metadata.",
                 "consumes": [
                     "application/json"
@@ -714,12 +804,6 @@ const docTemplate = `{
                 ],
                 "summary": "Ingest mobile-app telemetry (single reading or batch array)",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Shared ingest API key (required when the service is configured with one)",
-                        "name": "X-Ingest-Key",
-                        "in": "header"
-                    },
                     {
                         "description": "Array of readings (a single reading object is also accepted)",
                         "name": "payload",
@@ -763,6 +847,14 @@ const docTemplate = `{
         },
         "/v1/live": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "description": "Returns the latest fix per device. Use ?imeis= to restrict to a set, and ?fields= to trim columns (e.g. a lightweight map feed: ?fields=lat,lon).",
                 "produces": [
                     "application/json"
@@ -809,6 +901,14 @@ const docTemplate = `{
         },
         "/v1/live/{imei}": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -846,6 +946,14 @@ const docTemplate = `{
         },
         "/v1/mobile/history/{driver}": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -913,6 +1021,14 @@ const docTemplate = `{
         },
         "/v1/mobile/live": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -935,6 +1051,14 @@ const docTemplate = `{
         },
         "/v1/mobile/live/{driver}": {
             "get": {
+                "security": [
+                    {
+                        "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -1106,6 +1230,26 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "stop": {
+                    "type": "string"
+                }
+            }
+        },
+        "dashcam.EvidenceClip": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "integer"
+                },
+                "lat": {
+                    "type": "number"
+                },
+                "lon": {
+                    "type": "number"
+                },
+                "time": {
                     "type": "string"
                 }
             }
@@ -1543,6 +1687,20 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "IngestKey": {
+            "description": "Per-vendor ingest key (minted with scripts/ingest-key.sh). Devices use it to POST; every read below requires it too.",
+            "type": "apiKey",
+            "name": "X-Ingest-Key",
+            "in": "header"
+        },
+        "ServiceToken": {
+            "description": "Platform service token as \"Bearer \u003ctoken\u003e\" — for peer services (fms-api, TMS business-service) reading telemetry.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }`

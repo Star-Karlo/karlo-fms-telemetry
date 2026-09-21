@@ -77,6 +77,8 @@ type GeofenceResponse struct {
 //	@Param			payload	body		GeofenceRequest	true	"Batch of checks (max 5000)"
 //	@Success		200		{object}	GeofenceResponse
 //	@Failure		400		{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/geofence/check [post]
 func (h *Handler) handleGeofenceCheckBatch(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
@@ -198,6 +200,8 @@ func resolveGeoPos(imei, driver string, gps, mob map[string]GeoPos) (GeoPos, str
 //	@Param			lon			query		number	false	"Test an arbitrary point (with lat)"
 //	@Success		200			{object}	GeofenceResult
 //	@Failure		400			{object}	map[string]string
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/geofence/check [get]
 func (h *Handler) handleGeofenceCheckOne(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

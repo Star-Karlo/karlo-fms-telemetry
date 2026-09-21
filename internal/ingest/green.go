@@ -252,10 +252,11 @@ ON CONFLICT (imei, occurred_at, event_type) DO NOTHING`,
 //	@Description	Harsh accel/brake/corner events from Teltonika trackers, id-ascending. Poll with since=<last id>. Tenant-agnostic; FMS maps IMEI to a vehicle and scores it.
 //	@Tags			driving
 //	@Produce		json
-//	@Param			X-Ingest-Key	header	string	true	"ingest API key"
 //	@Param			since			query	int		false	"return events with id greater than this (default 0)"
 //	@Param			limit			query	int		false	"max rows (default 200)"
 //	@Success		200	{array}	ingest.GreenEvent
+//	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/driving-events [get]
 func (g *GreenStore) handleEvents(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
