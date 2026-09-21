@@ -353,6 +353,12 @@ definitions:
         type: string
       speed:
         type: number
+      state_since:
+        description: |-
+          StateSince is when the device's drive state (moving / idle / parking)
+          last changed — kept by the current-state upsert, so present on live
+          reads only; null on history rows and on rows written before it existed.
+        type: string
       time:
         description: gpsCreatedAt
         type: string

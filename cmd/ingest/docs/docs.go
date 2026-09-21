@@ -1646,6 +1646,10 @@ const docTemplate = `{
                 "speed": {
                     "type": "number"
                 },
+                "state_since": {
+                    "description": "StateSince is when the device's drive state (moving / idle / parking)\nlast changed — kept by the current-state upsert, so present on live\nreads only; null on history rows and on rows written before it existed.",
+                    "type": "string"
+                },
                 "time": {
                     "description": "gpsCreatedAt",
                     "type": "string"

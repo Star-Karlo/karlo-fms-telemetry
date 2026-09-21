@@ -38,6 +38,10 @@ type Position struct {
 	Provinsi   string          `json:"provinsi"`
 	Jalan      string          `json:"jalan"`
 	Metadata   json.RawMessage `json:"metadata" swaggertype:"object"` // vendor io + extras (raw payload excluded)
+	// StateSince is when the device's drive state (moving / idle / parking)
+	// last changed — kept by the current-state upsert, so present on live
+	// reads only; null on history rows and on rows written before it existed.
+	StateSince *time.Time `json:"state_since,omitempty"`
 }
 
 // Reader serves live (current state) and historical telemetry. History reads
@@ -57,7 +61,8 @@ const posCols = `imei, time, received_at, ST_Y(geom::geometry), ST_X(geom::geome
                  speed, bearing, ignition,
                  coalesce(kecamatan,''), coalesce(kelurahan,''), coalesce(kabupaten,''),
                  coalesce(kota,''), coalesce(provinsi,''), coalesce(jalan,''),
-                 coalesce(metadata, '{}'::jsonb) - '_raw'`
+                 coalesce(metadata, '{}'::jsonb) - '_raw',
+                 (metadata->>'_state_since')::timestamptz`
 
 // ---- field projection (?fields=) -------------------------------------------
 //
@@ -80,12 +85,13 @@ var fieldHotExpr = map[string]string{
 	"provinsi":    "coalesce(provinsi,'')",
 	"jalan":       "coalesce(jalan,'')",
 	"metadata":    "(coalesce(metadata,'{}'::jsonb) - '_raw')::text",
+	"state_since": "(metadata->>'_state_since')::timestamptz",
 }
 
 // fieldOrder gives the default (all-fields) projection and a stable ordering.
 var fieldOrder = []string{
 	"received_at", "lat", "lon", "speed", "bearing", "ignition",
-	"kecamatan", "kelurahan", "kabupaten", "kota", "provinsi", "jalan", "metadata",
+	"kecamatan", "kelurahan", "kabupaten", "kota", "provinsi", "jalan", "metadata", "state_since",
 }
 
 // projection is the validated set of output fields (excluding the always-present
@@ -189,6 +195,8 @@ func positionsToMaps(ps []Position, fields []string) []map[string]any {
 				m[f] = p.Provinsi
 			case "jalan":
 				m[f] = p.Jalan
+			case "state_since":
+				m[f] = p.StateSince
 			case "metadata":
 				m[f] = p.Metadata
 			}
@@ -212,7 +220,7 @@ func scanPositions(rows pgx.Rows) ([]Position, error) {
 		if err := rows.Scan(&p.IMEI, &p.Time, &p.ReceivedAt, &p.Lat, &p.Lon,
 			&p.Speed, &p.Bearing, &p.Ignition,
 			&p.Kecamatan, &p.Kelurahan, &p.Kabupaten, &p.Kota, &p.Provinsi, &p.Jalan,
-			&p.Metadata); err != nil {
+			&p.Metadata, &p.StateSince); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

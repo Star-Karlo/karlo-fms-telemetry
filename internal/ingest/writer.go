@@ -60,10 +60,24 @@ ON CONFLICT (imei) DO UPDATE SET
   -- sensor every night. Keep the last reading (and _fuel_at, stamped by the
   -- writer when a reading arrives) until a fresher one replaces it. The
   -- history rows stay raw.
+  --
+  -- _state_since: when the truck's drive state (moving / idle / parking)
+  -- last changed, so a consumer can say "idle for 40 min" without walking
+  -- history. The writer stamps every reading with its own fix time; here the
+  -- previous stamp survives while the class is unchanged. The class rule is
+  -- fms-backend's (liveview.movingSpeed = 3 km/h, then ignition); "offline"
+  -- is a function of the fix's age, which the reader derives.
   metadata = excluded.metadata || COALESCE(
     (SELECT jsonb_object_agg(k, v) FROM jsonb_each(latest.metadata) AS e(k, v)
       WHERE k IN ('Fuel Level', 'Fuel Level (CAN)', '_fuel_at') AND NOT (excluded.metadata ? k)),
     '{}'::jsonb)
+    || CASE
+         WHEN latest.metadata ? '_state_since'
+          AND (CASE WHEN latest.speed > 3 THEN 'moving' WHEN latest.ignition THEN 'idle' ELSE 'parking' END)
+            = (CASE WHEN excluded.speed > 3 THEN 'moving' WHEN excluded.ignition THEN 'idle' ELSE 'parking' END)
+         THEN jsonb_build_object('_state_since', latest.metadata->'_state_since')
+         ELSE '{}'::jsonb
+       END
 WHERE excluded.time > latest.time`
 
 // fuelKeys are the metadata keys that carry a tank reading, in the shape the
@@ -91,6 +105,18 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 		return nil
 	}
 
+	// _state_since (see upsertLatestSQL): every reading is stamped with its
+	// own fix time; the upsert keeps the older stamp while the drive state
+	// holds. History rows are written without it.
+	stateSince := func(md map[string]any, at time.Time) map[string]any {
+		out := make(map[string]any, len(md)+1)
+		for k, v := range md {
+			out[k] = v
+		}
+		out["_state_since"] = at.UTC().Format(time.RFC3339)
+		return out
+	}
+
 	// History only accepts fixes inside the partition window (retention
 	// days back, a few days ahead — partition_maintenance keeps 8 and 3).
 	// Outside it, INSERT fails with "no partition … found" and, because a
@@ -107,11 +133,17 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 	batch := &pgx.Batch{}
 	queued := 0
 	for _, r := range rows {
-		meta, err := json.Marshal(stampFuel(r.Reading.Metadata, r.Reading.GPSTime))
+		stamped := stampFuel(r.Reading.Metadata, r.Reading.GPSTime)
+		meta, err := json.Marshal(stamped)
 		if err != nil {
 			return fmt.Errorf("marshal metadata: %w", err)
 		}
-		// Same params for both statements (upsert reorders them by $N).
+		latestMeta, err := json.Marshal(stateSince(stamped, r.Reading.GPSTime))
+		if err != nil {
+			return fmt.Errorf("marshal metadata: %w", err)
+		}
+		// Same params for both statements (upsert reorders them by $N); only
+		// the metadata differs.
 		args := []any{
 			r.Reading.GPSTime, r.Reading.ReceivedAt, r.Reading.IMEI,
 			r.Reading.Lon, r.Reading.Lat,
@@ -124,7 +156,8 @@ func (w *Writer) WriteBatch(ctx context.Context, rows []Row) error {
 			batch.Queue(insertSQL, args...) // historical (append)
 			queued++
 		}
-		batch.Queue(upsertLatestSQL, args...) // current state (conditional upsert)
+		latestArgs := append(append([]any{}, args[:14]...), string(latestMeta))
+		batch.Queue(upsertLatestSQL, latestArgs...) // current state (conditional upsert)
 		queued++
 	}
 
