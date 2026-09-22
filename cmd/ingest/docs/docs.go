@@ -790,9 +790,12 @@ const docTemplate = `{
                 "security": [
                     {
                         "IngestKey": []
+                    },
+                    {
+                        "ServiceToken": []
                     }
                 ],
-                "description": "Same canonical shape as /v1/ingest but keyed by ` + "`" + `driver` + "`" + ` instead of ` + "`" + `imei` + "`" + ` (a phone has no IMEI). Each reading is reverse-geocoded to kecamatan/kelurahan/kota/provinsi/jalan and stored to the mobile_telemetry hypertable. received_at is stamped by the server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in ` + "`" + `io` + "`" + ` and are kept in metadata.",
+                "description": "Same canonical shape as /v1/ingest but keyed by ` + "`" + `driver` + "`" + ` (the master-data driver id) instead of ` + "`" + `imei` + "`" + ` (a phone has no IMEI). Each reading is reverse-geocoded to kecamatan/kelurahan/kota/provinsi/jalan and stored to the mobile_telemetry hypertable. received_at is stamped by the server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in ` + "`" + `io` + "`" + ` and are kept in metadata. Accepts an ingest key or a peer service's platform token, so a driver app can post through its own backend.",
                 "consumes": [
                     "application/json"
                 ],

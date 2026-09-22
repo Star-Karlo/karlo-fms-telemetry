@@ -431,7 +431,7 @@ func thinMobile(pts []MobilePosition, n int) []MobilePosition {
 // handleMobileIngest godoc
 //
 //	@Summary		Ingest mobile-app telemetry (single reading or batch array)
-//	@Description	Same canonical shape as /v1/ingest but keyed by `driver` instead of `imei` (a phone has no IMEI). Each reading is reverse-geocoded to kecamatan/kelurahan/kota/provinsi/jalan and stored to the mobile_telemetry hypertable. received_at is stamped by the server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in `io` and are kept in metadata.
+//	@Description	Same canonical shape as /v1/ingest but keyed by `driver` (the master-data driver id) instead of `imei` (a phone has no IMEI). Each reading is reverse-geocoded to kecamatan/kelurahan/kota/provinsi/jalan and stored to the mobile_telemetry hypertable. received_at is stamped by the server. Phone extras (batteryLevel, accuracy, status, isOverride, …) go in `io` and are kept in metadata. Accepts an ingest key or a peer service's platform token, so a driver app can post through its own backend.
 //	@Tags			ingest
 //	@Accept			json
 //	@Produce		json
@@ -440,10 +440,14 @@ func thinMobile(pts []MobilePosition, n int) []MobilePosition {
 //	@Failure		400	{object}	map[string]string
 //	@Failure		401	{object}	map[string]string
 //	@Security	IngestKey
+//	@Security	ServiceToken
 //	@Router			/v1/ingest/mobile [post]
 func (h *Handler) handleMobileIngest(w http.ResponseWriter, r *http.Request) {
-	if !h.authorized(r.Context(), r.Header.Get("X-Ingest-Key")) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or missing X-Ingest-Key"})
+	// An ingest key, or a peer service's platform token: the driver app
+	// posts through business-service (its own login), which forwards with
+	// the service token — so no ingest key is ever built into a phone.
+	if !h.AuthorizedRead(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or missing X-Ingest-Key or service token"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
