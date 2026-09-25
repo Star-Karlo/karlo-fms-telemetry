@@ -133,7 +133,7 @@ ORDER BY name, kec_name, sim DESC`
 			rows.Close()
 			return nil, err
 		}
-		a := Address{Kelurahan: deref(kel), Kecamatan: deref(kec), Kabupaten: deref(kab), Provinsi: deref(prov)}
+		a := Address{Kelurahan: deref(kel), Kecamatan: deref(kec), Kabupaten: deref(kab), Provinsi: canonProvince(deref(prov))}
 		score := sim
 		if tailN != "" {
 			score = 0.6*sim + 0.4*areaSim
@@ -182,7 +182,7 @@ ORDER BY max(sim) DESC LIMIT 15`
 			rows.Close()
 			return nil, err
 		}
-		a := Address{Kecamatan: deref(kec), Kabupaten: deref(kab), Provinsi: deref(prov)}
+		a := Address{Kecamatan: deref(kec), Kabupaten: deref(kab), Provinsi: canonProvince(deref(prov))}
 		switch kind {
 		case "kelurahan":
 			a.Kelurahan = deref(kel)

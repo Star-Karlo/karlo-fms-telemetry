@@ -55,7 +55,7 @@ LEFT JOIN LATERAL (
 	var p Place
 	found := prov != nil || kab != nil || kec != nil || kel != nil
 	if found {
-		p.Provinsi = deref(prov)
+		p.Provinsi = canonProvince(deref(prov))
 		p.Kabupaten = deref(kab)
 		p.Kecamatan = deref(kec)
 		p.Kelurahan = deref(kel)

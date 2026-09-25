@@ -25,3 +25,25 @@ func TestSortCandidates(t *testing.T) {
 		t.Errorf("order wrong: %+v", c)
 	}
 }
+
+// The capital must not come back as "Dki Jakarta" (the boundary data's
+// mechanical title case), and every spelling of Yogyakarta resolves to the
+// one both consoles use — TMS matches these strings against master data, so
+// a one-letter difference is a province that silently fails to match.
+func TestProvinceSpellingIsCanonical(t *testing.T) {
+	cases := map[string]string{
+		"Dki Jakarta":                   "DKI Jakarta",
+		"DKI JAKARTA":                   "DKI Jakarta",
+		"Daerah Khusus Ibukota Jakarta": "DKI Jakarta",
+		"DI YOGYAKARTA":                 "Daerah Istimewa Yogyakarta",
+		"Di Yogyakarta":                 "Daerah Istimewa Yogyakarta",
+		"Daerah Istimewa Yogyakarta":    "Daerah Istimewa Yogyakarta",
+		"Jawa Tengah":                   "Jawa Tengah", // untouched
+		"":                              "",
+	}
+	for in, want := range cases {
+		if got := canonProvince(in); got != want {
+			t.Errorf("canonProvince(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
