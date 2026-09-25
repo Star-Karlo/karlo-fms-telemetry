@@ -69,6 +69,10 @@ func (s *Store) Search(ctx context.Context, q string, limit int) ([]Candidate, e
 	if limit <= 0 || limit > 25 {
 		limit = 10
 	}
+	// Accept the spellings other systems use for the two provinces whose
+	// names are abbreviations ("DI YOGYAKARTA" is master data's), so a caller
+	// pasting an address from there is not told the place does not exist.
+	q = canonProvinceIn(q)
 	head, tail := q, ""
 	if i := strings.Index(q, ","); i >= 0 {
 		head, tail = strings.TrimSpace(q[:i]), strings.TrimSpace(q[i+1:])

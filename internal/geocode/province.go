@@ -1,5 +1,10 @@
 package geocode
 
+import (
+	"sort"
+	"strings"
+)
+
 // One spelling per province, shared with the rest of the platform.
 //
 // The boundary data is COD-AB, whose ADM1 names are title-cased mechanically:
@@ -38,6 +43,44 @@ func canonProvince(name string) string {
 	}
 	return name
 }
+
+// canonProvinceIn rewrites any province alias INSIDE a free-text string to
+// the canonical name, so a search for the spelling another system uses still
+// finds the polygon: "Jl. Malioboro, DI Yogyakarta" matches the same rows as
+// "…, Daerah Istimewa Yogyakarta". Longest alias first, so "di yogyakarta"
+// cannot half-match inside "daerah istimewa yogyakarta".
+func canonProvinceIn(s string) string {
+	if s == "" {
+		return s
+	}
+	lower := lowerASCII(s)
+	for _, alias := range aliasesLongestFirst {
+		canon := provinceCanon[alias]
+		for {
+			i := strings.Index(lower, alias)
+			if i < 0 {
+				break
+			}
+			s = s[:i] + canon + s[i+len(alias):]
+			lower = lowerASCII(s)
+		}
+	}
+	return s
+}
+
+// aliasesLongestFirst are the keys of provinceCanon that actually need
+// rewriting (an alias identical to its canonical form is skipped), ordered so
+// the longest is tried first.
+var aliasesLongestFirst = func() []string {
+	out := make([]string, 0, len(provinceCanon))
+	for k, v := range provinceCanon {
+		if k != lowerASCII(v) {
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
+	return out
+}()
 
 // lowerASCII lower-cases without pulling in unicode tables: these names are
 // ASCII, and a locale-aware fold would be a surprise in a lookup key.
