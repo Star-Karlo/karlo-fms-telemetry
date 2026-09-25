@@ -17,8 +17,11 @@ type Cache struct {
 // Bump this prefix version whenever the geocode result shape or data source
 // changes, so a deploy ignores stale cache entries instead of serving them.
 // v2: COD-AB kelurahan hierarchy + OSM streets (was kecamatan-only).
+// v3: one spelling per province ("DKI Jakarta", not the data's "Dki Jakarta").
+//     Entries live 30 days, so without this bump the corrected name would
+//     have reached a busy cell only after its cached copy expired.
 func NewCache(rdb *redis.Client) *Cache {
-	return &Cache{rdb: rdb, prefix: "geo:v2:"}
+	return &Cache{rdb: rdb, prefix: "geo:v3:"}
 }
 
 func (c *Cache) Get(ctx context.Context, hash string) (entry, bool) {
