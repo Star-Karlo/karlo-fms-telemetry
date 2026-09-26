@@ -45,7 +45,7 @@ jobs:
           TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for svc in ingest geocode; do
+          for svc in ingest geocode routing; do
             docker build --platform linux/amd64 --build-arg SERVICE=$svc -t "$REGISTRY/karlo/fms-$svc:$TAG" .
             docker push "$REGISTRY/karlo/fms-$svc:$TAG"
           done
@@ -58,6 +58,11 @@ jobs:
           INGEST="$REGISTRY/karlo/fms-ingest:$TAG"
           echo "ingest=$(bash scripts/register-revision.sh karlo-prod-fms-ingest "$INGEST")" >> "$GITHUB_OUTPUT"
           echo "geocode=$(bash scripts/register-revision.sh karlo-prod-fms-geocode "$REGISTRY/karlo/fms-geocode:$TAG")" >> "$GITHUB_OUTPUT"
+          # The routing cache only exists once its ECS service does; until
+          # then the image is built and pushed but nothing is rolled.
+          if aws ecs describe-services --cluster "$CLUSTER" --services karlo-prod-fms-routing --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "routing=$(bash scripts/register-revision.sh karlo-prod-fms-routing "$REGISTRY/karlo/fms-routing:$TAG")" >> "$GITHUB_OUTPUT"
+          fi
           bash scripts/register-revision.sh karlo-prod-fms-archiver "$INGEST" >/dev/null
           bash scripts/register-revision.sh karlo-prod-fms-dbtool "$INGEST" >/dev/null
         id: rev
@@ -66,6 +71,10 @@ jobs:
           set -euo pipefail
           aws ecs update-service --cluster "$CLUSTER" --service karlo-prod-fms-ingest --task-definition "karlo-prod-fms-ingest:${{ steps.rev.outputs.ingest }}" >/dev/null
           aws ecs update-service --cluster "$CLUSTER" --service karlo-prod-fms-geocode --task-definition "karlo-prod-fms-geocode:${{ steps.rev.outputs.geocode }}" >/dev/null
+          if [ -n "${{ steps.rev.outputs.routing }}" ]; then
+            aws ecs update-service --cluster "$CLUSTER" --service karlo-prod-fms-routing --task-definition "karlo-prod-fms-routing:${{ steps.rev.outputs.routing }}" >/dev/null
+            aws ecs wait services-stable --cluster "$CLUSTER" --services karlo-prod-fms-routing
+          fi
           aws ecs wait services-stable --cluster "$CLUSTER" --services karlo-prod-fms-ingest karlo-prod-fms-geocode
       - name: Smoke
         run: |

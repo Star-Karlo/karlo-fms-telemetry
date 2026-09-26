@@ -1,4 +1,4 @@
-.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-geocode run-ingest load-geocode
+.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-geocode run-ingest run-routing load-geocode
 
 # Apply migrations against $DATABASE_URL via host psql (remote DBs, e.g. Tiger Cloud)
 migrate-remote:
@@ -11,6 +11,7 @@ swagger:
 	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
 	swag init -g main.go -d cmd/geocode,internal/geocode -o cmd/geocode/docs
 	swag init -g main.go -d cmd/ingest,internal/ingest,internal/dashcam -o cmd/ingest/docs
+	swag init -g main.go -d cmd/routing,internal/routecache -o cmd/routing/docs
 	@echo "swagger specs regenerated"
 
 # Run the geocode service (Swagger UI at http://localhost:8081/swagger/index.html)
@@ -28,6 +29,10 @@ up-app:
 # Load Indonesia kecamatan boundary master data (see scripts/geocode/README.md)
 load-geocode:
 	./scripts/geocode/load.sh
+
+# Run the routing cache (Swagger UI at http://localhost:8083/swagger/index.html)
+run-routing:
+	go run ./cmd/routing
 
 # Start local infra (Timescale/PostGIS + Redis)
 up:

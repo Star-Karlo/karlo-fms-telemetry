@@ -430,3 +430,36 @@ CREATE INDEX IF NOT EXISTS idx_kelurahan_kec_trgm ON kelurahan USING gin (kec_na
 CREATE INDEX IF NOT EXISTS idx_kelurahan_kab_trgm ON kelurahan USING gin (kab_name gin_trgm_ops);
 -- The area search strips "Kota "/"Kabupaten " before matching; index that form too.
 CREATE INDEX IF NOT EXISTS idx_kelurahan_kab_bare_trgm ON kelurahan USING gin ((regexp_replace(kab_name, '^(Kota|Kabupaten) ', '')) gin_trgm_ops);
+
+-- route_cache — the shared cache of MAPID's paid answers.
+--
+-- Several Karlo services ask MAPID the same questions over and over: the
+-- fare of a lane the fleet runs daily, the route between two warehouses that
+-- do not move. Each answer costs money and none of it was kept, so the same
+-- lane was bought again every time somebody opened an order. This table is
+-- the memory: keyed by the CONTENT of the request, holding MAPID's reply
+-- verbatim, and read by every service instead of the upstream.
+--
+-- The golongan is NOT part of the key: MAPID prices all five classes in one
+-- response, so one paid call answers gol I..V and keying on the class would
+-- buy the same lane five times over.
+--
+-- The request is stored as columns beside the hash on purpose. When a tariff
+-- changes or a fare looks wrong, "drop every cached toll that crosses this
+-- ruas" has to be one statement against real values, not a scan of opaque
+-- digests.
+CREATE TABLE IF NOT EXISTS route_cache (
+  key         bytea PRIMARY KEY,           -- sha256 over the normalised request
+  endpoint    text        NOT NULL,        -- route | route_toll
+  profile     text        NOT NULL,        -- truck | car | motorcycle | foot
+  points      jsonb       NOT NULL,        -- [[lon,lat],…] rounded, in order
+  payload     jsonb       NOT NULL,        -- MAPID's response, untouched
+  hits        bigint      NOT NULL DEFAULT 0,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz NOT NULL DEFAULT now(),
+  expires_at  timestamptz NOT NULL
+);
+
+-- The sweep, and "what is this lane costing us" reporting.
+CREATE INDEX IF NOT EXISTS route_cache_expires_idx ON route_cache (expires_at);
+CREATE INDEX IF NOT EXISTS route_cache_endpoint_idx ON route_cache (endpoint, last_used_at DESC);

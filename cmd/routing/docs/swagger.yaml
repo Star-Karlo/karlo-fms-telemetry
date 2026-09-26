@@ -1,0 +1,140 @@
+basePath: /
+definitions:
+  routecache.Answer:
+    properties:
+      cached:
+        type: boolean
+      cached_at:
+        type: string
+      hits:
+        type: integer
+      payload:
+        type: object
+      source:
+        description: mapid — the provider that produced it
+        type: string
+    type: object
+  routecache.RouteRequest:
+    properties:
+      points:
+        description: |-
+          Points are [lon, lat] in TRAVEL ORDER — MAPID's order, and the order
+          the cache keys on.
+        items:
+          items:
+            format: float64
+            type: number
+          type: array
+        type: array
+      profile:
+        description: truck (default) | car | motorcycle | foot
+        type: string
+    type: object
+info:
+  contact: {}
+  description: Cached MAPID routing and toll pricing, shared by the Karlo platform's
+    services. Every endpoint requires a platform service token — a paid upstream is
+    never behind an open door.
+  title: Karlo Routing Cache
+  version: "0.1"
+paths:
+  /v1/route:
+    post:
+      consumes:
+      - application/json
+      description: MAPID's routing answer for these points, served from the shared
+        cache when it has been asked before and bought upstream when it has not. The
+        response carries MAPID's payload untouched under `payload`, plus whether it
+        was cached. Points are [lon, lat] in travel order; order is part of the identity,
+        so A→B and B→A are different journeys.
+      parameters:
+      - description: points + profile
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/routecache.RouteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routecache.Answer'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: MAPID refused or was unreachable; its own message is passed
+            through
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ServiceToken: []
+      summary: Route between points (cached)
+      tags:
+      - routing
+  /v1/route-toll:
+    post:
+      consumes:
+      - application/json
+      description: 'As /v1/route, with MAPID''s toll pricing. The payload carries
+        `prices` (the total per golongan — the figure to use) and `details` (the gates,
+        as evidence: the per-gate prices are a partition of the total, not charges
+        to add up). All five golongan come back in one answer, so the caller picks
+        the class it needs and the cache holds one entry per journey rather than five.'
+      parameters:
+      - description: points + profile
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/routecache.RouteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routecache.Answer'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ServiceToken: []
+      summary: Route with toll fares (cached)
+      tags:
+      - routing
+securityDefinitions:
+  ServiceToken:
+    description: Platform service token as "Bearer <token>".
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
