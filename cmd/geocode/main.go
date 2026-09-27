@@ -93,9 +93,9 @@ func main() {
 		// Longer than MAPID's 60s upstream timeout: a routing miss waits on
 		// it, and cutting the response after paying for the answer is the
 		// one outcome worse than being slow.
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       90 * time.Second,
-		MaxHeaderBytes:    64 << 10,
+		WriteTimeout:   120 * time.Second,
+		IdleTimeout:    90 * time.Second,
+		MaxHeaderBytes: 64 << 10,
 	}
 	log.Fatal(srv.ListenAndServe())
 }

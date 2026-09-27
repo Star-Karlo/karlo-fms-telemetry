@@ -52,10 +52,10 @@ func TestProvinceSpellingIsCanonical(t *testing.T) {
 // is folded to the canonical name before it is matched.
 func TestSearchQueryAcceptsProvinceAliases(t *testing.T) {
 	cases := map[string]string{
-		"Jl. Malioboro, DI Yogyakarta":  "Jl. Malioboro, Daerah Istimewa Yogyakarta",
-		"Sleman, DI YOGYAKARTA":         "Sleman, Daerah Istimewa Yogyakarta",
+		"Jl. Malioboro, DI Yogyakarta":          "Jl. Malioboro, Daerah Istimewa Yogyakarta",
+		"Sleman, DI YOGYAKARTA":                 "Sleman, Daerah Istimewa Yogyakarta",
 		"Gudang, Daerah Khusus Ibukota Jakarta": "Gudang, DKI Jakarta",
-		"Jl. Sudirman, Jawa Tengah":     "Jl. Sudirman, Jawa Tengah", // untouched
+		"Jl. Sudirman, Jawa Tengah":             "Jl. Sudirman, Jawa Tengah", // untouched
 	}
 	for in, want := range cases {
 		if got := canonProvinceIn(in); got != want {

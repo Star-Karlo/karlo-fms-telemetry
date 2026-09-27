@@ -49,9 +49,9 @@ type Address struct {
 var (
 	adminPrefix = regexp.MustCompile(`(?i)^\s*(kota|kabupaten|kab\.?|kecamatan|kec\.?|kelurahan|kel\.?|desa)\s+`)
 	// levelOf maps an explicit prefix to the admin level the user meant.
-	levelOf = map[string]string{"kota": "kabupaten", "kabupaten": "kabupaten", "kab": "kabupaten", "kecamatan": "kecamatan", "kec": "kecamatan", "kelurahan": "kelurahan", "kel": "kelurahan", "desa": "kelurahan"}
-	roadPrefix  = regexp.MustCompile(`(?i)^\s*(jalan|jl\.?|jln\.?)\s+`)
-	spaces      = regexp.MustCompile(`\s+`)
+	levelOf    = map[string]string{"kota": "kabupaten", "kabupaten": "kabupaten", "kab": "kabupaten", "kecamatan": "kecamatan", "kec": "kecamatan", "kelurahan": "kelurahan", "kel": "kelurahan", "desa": "kelurahan"}
+	roadPrefix = regexp.MustCompile(`(?i)^\s*(jalan|jl\.?|jln\.?)\s+`)
+	spaces     = regexp.MustCompile(`\s+`)
 )
 
 // normalise strips admin prefixes and squeezes whitespace, for matching.
