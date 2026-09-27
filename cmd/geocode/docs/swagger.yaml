@@ -59,10 +59,44 @@ definitions:
       provinsi:
         type: string
     type: object
+  routecache.Answer:
+    properties:
+      cached:
+        type: boolean
+      cached_at:
+        type: string
+      hits:
+        type: integer
+      payload:
+        type: object
+      source:
+        description: mapid — the provider that produced it
+        type: string
+    type: object
+  routecache.RouteRequest:
+    properties:
+      points:
+        description: |-
+          Points are [lon, lat] in TRAVEL ORDER — MAPID's order, and the order
+          the cache keys on.
+        items:
+          items:
+            format: float64
+            type: number
+          type: array
+        type: array
+      profile:
+        description: truck (default) | car | motorcycle | foot
+        type: string
+    type: object
 info:
   contact: {}
-  description: 'Reverse geocoding: lat/lon -> kecamatan / kota / provinsi (PostGIS
-    + Redis geohash cache).'
+  description: 'Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota
+    / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the
+    platform''s routing cache (/v1/route, /v1/route-toll — MAPID''s answers kept 90
+    days in Postgres so the same lane is never bought twice). They share a service
+    because they share a database and a deploy, not because they are the same thing:
+    geocode answers from our own data, routing caches somebody else\''s.'
   title: Karlo FMS Geocode Service
   version: "0.1"
 paths:
@@ -135,10 +169,104 @@ paths:
       summary: 'Forward geocode: an address or place name to candidate pins (Indonesia)'
       tags:
       - geocode
+  /v1/route:
+    post:
+      consumes:
+      - application/json
+      description: MAPID's routing answer for these points, served from the shared
+        cache when it has been asked before and bought upstream when it has not. The
+        response carries MAPID's payload untouched under `payload`, plus whether it
+        was cached. Points are [lon, lat] in travel order; order is part of the identity,
+        so A→B and B→A are different journeys.
+      parameters:
+      - description: points + profile
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/routecache.RouteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routecache.Answer'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: MAPID refused or was unreachable; its own message is passed
+            through
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ServiceToken: []
+      summary: Route between points (cached)
+      tags:
+      - routing
+  /v1/route-toll:
+    post:
+      consumes:
+      - application/json
+      description: 'As /v1/route, with MAPID''s toll pricing. The payload carries
+        `prices` (the total per golongan — the figure to use) and `details` (the gates,
+        as evidence: the per-gate prices are a partition of the total, not charges
+        to add up). All five golongan come back in one answer, so the caller picks
+        the class it needs and the cache holds one entry per journey rather than five.'
+      parameters:
+      - description: points + profile
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/routecache.RouteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routecache.Answer'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ServiceToken: []
+      summary: Route with toll fares (cached)
+      tags:
+      - routing
 securityDefinitions:
   ServiceToken:
-    description: Platform service token as "Bearer <token>" — /search is for peer
-      services (TMS business-service); /reverse stays open.
+    description: Platform service token as "Bearer <token>" — required for /search
+      and for every routing endpoint (they front a PAID upstream). /reverse stays
+      open.
     in: header
     name: Authorization
     type: apiKey
