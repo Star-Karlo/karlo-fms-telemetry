@@ -7,6 +7,7 @@
 //	telmigrate role              set telemetry_app's password from APP_DSN (the URL the services will use)
 //	telmigrate catchup FROM TO   AFTER cutover: append rows Tiger received in [FROM,TO) (RFC3339) that RDS lacks
 //	telmigrate indexes           build the forward-geocoding trigram indexes CONCURRENTLY on DST_DSN (safe on a live DB)
+//	telmigrate routecache        create the routing cache's table + indexes only (safe on a live DB)
 //
 // Streaming COPY, one table at a time, and the two hypertables one DAY at a
 // time. A day is ~1.7 M rows; streaming keeps memory flat regardless, and
@@ -46,7 +47,7 @@ var dayTables = []string{"telemetry", "mobile_telemetry"}
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("usage: telmigrate schema | copy [days] | verify [days]")
+		log.Fatal("usage: telmigrate schema | copy [days] | verify [days] | indexes | routecache | catchup FROM TO | role")
 	}
 	ctx := context.Background()
 	src, dst := os.Getenv("SRC_DSN"), os.Getenv("DST_DSN")
@@ -70,6 +71,8 @@ func main() {
 		setAppRole(ctx, dst, os.Getenv("APP_DSN"))
 	case "indexes":
 		buildIndexes(ctx, dst)
+	case "routecache":
+		createRouteCache(ctx, dst)
 	case "catchup":
 		if len(os.Args) < 4 {
 			log.Fatal("usage: telmigrate catchup <from RFC3339> <to RFC3339>")
@@ -152,6 +155,41 @@ func applySchema(ctx context.Context, dst string) {
 	var n int
 	_ = c.QueryRow(ctx, `SELECT count(*) FROM pg_tables WHERE schemaname='public'`).Scan(&n)
 	fmt.Printf("schema applied: %d tables\n", n)
+}
+
+// createRouteCache makes just the routing cache's table and indexes.
+//
+// Separate from `schema` on purpose: that applies the WHOLE file in one
+// statement, which on a live database means taking locks on the telemetry
+// tables and, when this was last tried, a deadlock against the writer. This
+// touches nothing but its own table, is idempotent, and is safe to run
+// while everything else is serving.
+func createRouteCache(ctx context.Context, dst string) {
+	c := connect(ctx, dst, "dst")
+	defer c.Close(ctx)
+	const ddl = `
+CREATE TABLE IF NOT EXISTS route_cache (
+  key          bytea PRIMARY KEY,
+  endpoint     text        NOT NULL,
+  profile      text        NOT NULL,
+  points       jsonb       NOT NULL,
+  location_ids jsonb       NOT NULL DEFAULT '[]',
+  payload      jsonb       NOT NULL,
+  hits         bigint      NOT NULL DEFAULT 0,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz NOT NULL DEFAULT now(),
+  expires_at   timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS route_cache_expires_idx ON route_cache (expires_at);
+CREATE INDEX IF NOT EXISTS route_cache_endpoint_idx ON route_cache (endpoint, last_used_at DESC);
+CREATE INDEX IF NOT EXISTS route_cache_location_ids_idx ON route_cache USING gin (location_ids);
+GRANT SELECT, INSERT, UPDATE, DELETE ON route_cache TO telemetry_app;`
+	if _, err := c.Exec(ctx, ddl); err != nil {
+		log.Fatalf("routecache: %v", err)
+	}
+	var n int64
+	_ = c.QueryRow(ctx, `SELECT count(*) FROM route_cache`).Scan(&n)
+	fmt.Printf("route_cache ready (%d cached answers)\n", n)
 }
 
 // columns of a table on the SOURCE, so the COPY lists them explicitly and a
