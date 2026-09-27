@@ -48,12 +48,35 @@ func NewMAPID(baseURL, key string) *MAPID {
 func (m *MAPID) Configured() bool { return m != nil && m.key != "" }
 
 // Route asks for a path between the points.
+//
+// THE BARE ENDPOINT IS DELIBERATE — do not "upgrade" it to /v4/route.
+// Measured against MAPID on 2026-09-27 with one identical body:
+//
+//	POST /          200, paths[0] distance=148347.263 time=7629920
+//	POST /v3/route  200, identical figures (plus a `hints` block)
+//	POST /v4/route  400
+//
+// So the bare path already IS v3's contract, and v4 is not a newer version
+// of it: v4 takes Karlo's own location IDs registered with MAPID
+// ({IDLokasiMuat, IDLokasiBongkar}) rather than coordinates. That makes it
+// uncacheable here — its inputs are opaque ids, not points, so two callers
+// asking for the same journey would not share an entry — and unusable by
+// anything that does not hold those ids. A product that wants v4 keeps its
+// own attempt and falls back to this service.
+//
+// points_encoded stays FALSE: nothing in the estate decodes a polyline
+// (there is no decoder in any repo), and GeoJSON is the richer form. It is
+// therefore not part of the cache key either — one entry per lane.
 func (m *MAPID) Route(ctx context.Context, profile string, points []Point) ([]byte, error) {
 	body := map[string]any{"profile": profile, "points": points, "points_encoded": false}
 	return m.post(ctx, "/", body)
 }
 
 // RouteToll asks for a path priced by toll gate.
+//
+// /v2/route_n_toll/rute, not the /v2/route_n_toll the old backend calls:
+// the /rute variant is the one that returns per-gate names, coordinates and
+// prices per golongan, which is what an allowance has to be evidenced from.
 func (m *MAPID) RouteToll(ctx context.Context, profile string, points []Point) ([]byte, error) {
 	body := map[string]any{"profile": profile, "points": points, "tollType": tollTypeUpstream}
 	return m.post(ctx, "/v2/route_n_toll/rute", body)
