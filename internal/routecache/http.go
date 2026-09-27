@@ -36,6 +36,8 @@ func (h *Handler) Routes(r chi.Router) {
 		pr.Use(h.requireToken)
 		pr.Post("/v1/route", h.route)
 		pr.Post("/v1/route-toll", h.routeToll)
+		pr.Post("/v1/route-ids", h.routeIDs)
+		pr.Post("/v1/route-cache/purge", h.purge)
 	})
 }
 
@@ -55,6 +57,24 @@ func (h *Handler) requireToken(next http.Handler) http.Handler {
 }
 
 // RouteRequest is the body both endpoints take.
+// RouteIDsRequest names a journey by Karlo's location ids instead of
+// coordinates (MAPID's /v4/route).
+type RouteIDsRequest struct {
+	// LocationIDs: exactly two, loading point first.
+	LocationIDs []string `json:"location_ids"`
+}
+
+// PurgeRequest drops cached journeys after a place has moved.
+type PurgeRequest struct {
+	// LocationID drops every journey naming this id.
+	LocationID string `json:"location_id,omitempty"`
+	// Lon/Lat/RadiusM drops every journey with a point within the radius
+	// (default 200 m) — the coordinate equivalent.
+	Lon     float64 `json:"lon,omitempty"`
+	Lat     float64 `json:"lat,omitempty"`
+	RadiusM float64 `json:"radius_m,omitempty"`
+}
+
 type RouteRequest struct {
 	// Points are [lon, lat] in TRAVEL ORDER — MAPID's order, and the order
 	// the cache keys on.
@@ -93,6 +113,78 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) { h.answer(w, r,
 //	@Security		ServiceToken
 //	@Router			/v1/route-toll [post]
 func (h *Handler) routeToll(w http.ResponseWriter, r *http.Request) { h.answer(w, r, "route_toll") }
+
+// routeIDs godoc
+//
+//	@Summary		Route between two Karlo location ids (cached)
+//	@Description	MAPID's /v4/route, which takes Karlo's own location ids registered with MAPID rather than coordinates — it may know a yard or gate centroid that a dropped pin does not hit, so its answer can differ from the coordinate route for the same pair. Cached on the id pair, which is a steadier key than coordinates. A pair MAPID does not recognise comes back 502 and is not cached, so a caller can fall back to /v1/route exactly as it does today. If a location MOVES, call /v1/route-cache/purge with its id — the id does not change when the place does.
+//	@Tags			routing
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		RouteIDsRequest	true	"two location ids, loading point first"
+//	@Success		200		{object}	Answer
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string
+//	@Failure		502		{object}	map[string]string
+//	@Security		ServiceToken
+//	@Router			/v1/route-ids [post]
+func (h *Handler) routeIDs(w http.ResponseWriter, r *http.Request) {
+	var req RouteIDsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
+		return
+	}
+	ans, err := h.svc.Get(r.Context(), Request{Endpoint: "route_ids", LocationIDs: req.LocationIDs})
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, ans)
+	case err == ErrNoIDs:
+		writeErr(w, http.StatusBadRequest, err.Error())
+	default:
+		writeErr(w, http.StatusBadGateway, err.Error())
+	}
+}
+
+// purge godoc
+//
+//	@Summary		Drop cached journeys for a place that has moved
+//	@Description	A cached answer is only as true as the place it was computed for. Coordinates change when a warehouse moves, so those entries simply go unused — but a LOCATION ID does not change, and would keep serving the route to where the warehouse used to be until it expires. Call this with the id when a location moves, or with lon/lat (+radius, default 200 m) to drop every journey touching a point.
+//	@Tags			routing
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		PurgeRequest	true	"location_id, or lon+lat"
+//	@Success		200		{object}	map[string]int64	"{\"purged\": n}"
+//	@Failure		400		{object}	map[string]string
+//	@Failure		401		{object}	map[string]string
+//	@Security		ServiceToken
+//	@Router			/v1/route-cache/purge [post]
+func (h *Handler) purge(w http.ResponseWriter, r *http.Request) {
+	var req PurgeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body: "+err.Error())
+		return
+	}
+	var n int64
+	var err error
+	switch {
+	case strings.TrimSpace(req.LocationID) != "":
+		n, err = h.svc.PurgeLocation(r.Context(), strings.TrimSpace(req.LocationID))
+	case req.Lon != 0 || req.Lat != 0:
+		radius := req.RadiusM
+		if radius <= 0 {
+			radius = 200
+		}
+		n, err = h.svc.PurgeNear(r.Context(), req.Lon, req.Lat, radius)
+	default:
+		writeErr(w, http.StatusBadRequest, "location_id, or lon and lat, are required")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"purged": n})
+}
 
 func (h *Handler) answer(w http.ResponseWriter, r *http.Request, endpoint string) {
 	var req RouteRequest

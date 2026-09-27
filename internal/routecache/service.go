@@ -30,9 +30,16 @@ type Answer struct {
 // ErrNoPoints is a request that cannot be a journey.
 var ErrNoPoints = errors.New("at least two points are required")
 
+// ErrNoIDs is an id-routed request without exactly two ids.
+var ErrNoIDs = errors.New("exactly two location ids are required")
+
 // Get returns the answer for r, buying it upstream on a miss.
 func (s *Service) Get(ctx context.Context, r Request) (Answer, error) {
-	if len(r.Points) < 2 {
+	if r.Endpoint == "route_ids" {
+		if len(r.LocationIDs) != 2 {
+			return Answer{}, ErrNoIDs
+		}
+	} else if len(r.Points) < 2 {
 		return Answer{}, ErrNoPoints
 	}
 	n := r.Normalise()
@@ -64,6 +71,8 @@ func (s *Service) Get(ctx context.Context, r Request) (Answer, error) {
 	switch n.Endpoint {
 	case "route_toll":
 		payload, err = s.up.RouteToll(ctx, n.Profile, n.Points)
+	case "route_ids":
+		payload, err = s.up.RouteByIDs(ctx, n.LocationIDs, false)
 	default:
 		payload, err = s.up.Route(ctx, n.Profile, n.Points)
 	}
@@ -76,6 +85,16 @@ func (s *Service) Get(ctx context.Context, r Request) (Answer, error) {
 		log.Printf("routecache: write %x: %v", key[:6], err)
 	}
 	return Answer{Payload: payload, Cached: false, Source: "mapid"}, nil
+}
+
+// PurgeLocation drops the cached journeys that name a location id.
+func (s *Service) PurgeLocation(ctx context.Context, id string) (int64, error) {
+	return s.store.PurgeByLocationID(ctx, id)
+}
+
+// PurgeNear drops the cached journeys passing within radiusM of a point.
+func (s *Service) PurgeNear(ctx context.Context, lon, lat, radiusM float64) (int64, error) {
+	return s.store.PurgeNear(ctx, lon, lat, radiusM)
 }
 
 // Sweep deletes expired rows on a ticker. Best-effort by design: a lookup

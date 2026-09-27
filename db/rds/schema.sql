@@ -453,6 +453,7 @@ CREATE TABLE IF NOT EXISTS route_cache (
   endpoint    text        NOT NULL,        -- route | route_toll
   profile     text        NOT NULL,        -- truck | car | motorcycle | foot
   points      jsonb       NOT NULL,        -- [[lon,lat],…] rounded, in order
+  location_ids jsonb      NOT NULL DEFAULT '[]',  -- Karlo location ids, for /v4 journeys
   payload     jsonb       NOT NULL,        -- MAPID's response, untouched
   hits        bigint      NOT NULL DEFAULT 0,
   created_at  timestamptz NOT NULL DEFAULT now(),
@@ -463,3 +464,5 @@ CREATE TABLE IF NOT EXISTS route_cache (
 -- The sweep, and "what is this lane costing us" reporting.
 CREATE INDEX IF NOT EXISTS route_cache_expires_idx ON route_cache (expires_at);
 CREATE INDEX IF NOT EXISTS route_cache_endpoint_idx ON route_cache (endpoint, last_used_at DESC);
+-- "drop every journey that names this warehouse", for when a location moves.
+CREATE INDEX IF NOT EXISTS route_cache_location_ids_idx ON route_cache USING gin (location_ids);

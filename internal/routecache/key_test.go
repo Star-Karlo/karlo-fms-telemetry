@@ -45,3 +45,22 @@ func TestGolonganIsNotPartOfTheKey(t *testing.T) {
 		t.Error("two identical toll requests keyed differently")
 	}
 }
+
+// A journey named by location ids is keyed on the ids — a steadier key than
+// coordinates — and never collides with the coordinate journey for the same
+// pair, because MAPID can legitimately answer them differently.
+func TestLocationIDJourneys(t *testing.T) {
+	a := Request{Endpoint: "route_ids", LocationIDs: []string{"LOC-1", "LOC-2"}}
+	same := Request{Endpoint: "route_ids", Profile: "truck", LocationIDs: []string{" LOC-1 ", "LOC-2"}}
+	if string(a.Key()) != string(same.Key()) {
+		t.Error("the same id pair produced two keys — every call would miss")
+	}
+	reversed := Request{Endpoint: "route_ids", LocationIDs: []string{"LOC-2", "LOC-1"}}
+	if string(a.Key()) == string(reversed.Key()) {
+		t.Error("the return journey shares the outbound's entry")
+	}
+	coords := Request{Endpoint: "route", Points: []Point{{106.8, -6.1}, {110.4, -7.0}}}
+	if string(a.Key()) == string(coords.Key()) {
+		t.Error("an id journey collided with a coordinate journey")
+	}
+}

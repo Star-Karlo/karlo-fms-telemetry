@@ -72,6 +72,26 @@ func (m *MAPID) Route(ctx context.Context, profile string, points []Point) ([]by
 	return m.post(ctx, "/", body)
 }
 
+// RouteByIDs asks /v4/route, which takes Karlo's own location ids rather
+// than coordinates. MAPID may know a yard or gate centroid for an id that a
+// dropped pin does not hit, so the answer can legitimately differ from the
+// coordinate route for the same pair — that is the reason a caller would
+// use it, and the reason it is a separate cache entry rather than an alias.
+//
+// A pair MAPID does not recognise is a 400, and a 400 is never cached: the
+// caller falls back to coordinates exactly as it does today.
+func (m *MAPID) RouteByIDs(ctx context.Context, ids []string, pointsEncoded bool) ([]byte, error) {
+	if len(ids) != 2 {
+		return nil, fmt.Errorf("v4 routing takes exactly two location ids, got %d", len(ids))
+	}
+	body := map[string]any{
+		"IDLokasiMuat":    ids[0],
+		"IDLokasiBongkar": ids[1],
+		"points_encoded":  pointsEncoded,
+	}
+	return m.post(ctx, "/v4/route", body)
+}
+
 // RouteToll asks for a path priced by toll gate.
 //
 // /v2/route_n_toll/rute, not the /v2/route_n_toll the old backend calls:
@@ -101,7 +121,11 @@ func (m *MAPID) post(ctx context.Context, path string, body map[string]any) ([]b
 			// Every miss is logged with what it cost us to answer: this is
 			// the only record of what was actually bought, and "the fare
 			// looked wrong six weeks ago" is otherwise unanswerable.
-			log.Printf("mapid: %s points=%d bytes=%d (paid call)", path, len(body["points"].([]Point)), len(out))
+			n := 0
+			if pts, ok := body["points"].([]Point); ok {
+				n = len(pts)
+			}
+			log.Printf("mapid: %s points=%d bytes=%d (paid call)", path, n, len(out))
 			return out, nil
 		case status >= 500 && attempt == 0:
 			select {

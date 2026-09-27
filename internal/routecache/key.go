@@ -37,9 +37,16 @@ type Point [2]float64
 // asks upstream with the same class and lets the caller read the golongan
 // it wants out of `prices`.
 type Request struct {
-	Endpoint string // route | route_toll
+	Endpoint string // route | route_toll | route_ids
 	Profile  string // truck (default) | car | motorcycle | foot
 	Points   []Point
+	// LocationIDs is the other way to name a journey: Karlo's own location
+	// ids as registered with MAPID, which its /v4/route takes instead of
+	// coordinates (origin first, destination second). They key BETTER than
+	// coordinates — a stable string, nothing to round — so the same
+	// warehouse pair is one entry for ever. Set for endpoint "route_ids"
+	// and empty otherwise.
+	LocationIDs []string
 }
 
 // Normalise fills in the defaults and rounds the coordinates, so two callers
@@ -52,6 +59,11 @@ func (r Request) Normalise() Request {
 	}
 	if out.Profile == "" {
 		out.Profile = "truck"
+	}
+	for _, id := range r.LocationIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			out.LocationIDs = append(out.LocationIDs, id)
+		}
 	}
 	for _, p := range r.Points {
 		out.Points = append(out.Points, Point{round(p[0]), round(p[1])})
@@ -75,6 +87,12 @@ func (r Request) Key() []byte {
 	b.WriteString(n.Endpoint)
 	b.WriteByte('|')
 	b.WriteString(n.Profile)
+	// Ids and points never mix: a journey is named one way or the other,
+	// and ORDER IS IDENTITY in both (loading point first, unloading second).
+	for _, id := range n.LocationIDs {
+		b.WriteByte('|')
+		b.WriteString(id)
+	}
 	for _, p := range n.Points {
 		b.WriteByte('|')
 		b.WriteString(fmtCoord(p[0]))

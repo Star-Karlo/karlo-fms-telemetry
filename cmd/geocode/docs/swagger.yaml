@@ -73,6 +73,29 @@ definitions:
         description: mapid — the provider that produced it
         type: string
     type: object
+  routecache.PurgeRequest:
+    properties:
+      lat:
+        type: number
+      location_id:
+        description: LocationID drops every journey naming this id.
+        type: string
+      lon:
+        description: |-
+          Lon/Lat/RadiusM drops every journey with a point within the radius
+          (default 200 m) — the coordinate equivalent.
+        type: number
+      radius_m:
+        type: number
+    type: object
+  routecache.RouteIDsRequest:
+    properties:
+      location_ids:
+        description: 'LocationIDs: exactly two, loading point first.'
+        items:
+          type: string
+        type: array
+    type: object
   routecache.RouteRequest:
     properties:
       points:
@@ -214,6 +237,99 @@ paths:
       security:
       - ServiceToken: []
       summary: Route between points (cached)
+      tags:
+      - routing
+  /v1/route-cache/purge:
+    post:
+      consumes:
+      - application/json
+      description: A cached answer is only as true as the place it was computed for.
+        Coordinates change when a warehouse moves, so those entries simply go unused
+        — but a LOCATION ID does not change, and would keep serving the route to where
+        the warehouse used to be until it expires. Call this with the id when a location
+        moves, or with lon/lat (+radius, default 200 m) to drop every journey touching
+        a point.
+      parameters:
+      - description: location_id, or lon+lat
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/routecache.PurgeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{\"purged\": n}'
+          schema:
+            additionalProperties:
+              format: int64
+              type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ServiceToken: []
+      summary: Drop cached journeys for a place that has moved
+      tags:
+      - routing
+  /v1/route-ids:
+    post:
+      consumes:
+      - application/json
+      description: MAPID's /v4/route, which takes Karlo's own location ids registered
+        with MAPID rather than coordinates — it may know a yard or gate centroid that
+        a dropped pin does not hit, so its answer can differ from the coordinate route
+        for the same pair. Cached on the id pair, which is a steadier key than coordinates.
+        A pair MAPID does not recognise comes back 502 and is not cached, so a caller
+        can fall back to /v1/route exactly as it does today. If a location MOVES,
+        call /v1/route-cache/purge with its id — the id does not change when the place
+        does.
+      parameters:
+      - description: two location ids, loading point first
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/routecache.RouteIDsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/routecache.Answer'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - ServiceToken: []
+      summary: Route between two Karlo location ids (cached)
       tags:
       - routing
   /v1/route-toll:

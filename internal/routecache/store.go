@@ -62,14 +62,51 @@ func (s *Store) Put(ctx context.Context, key []byte, r Request, payload []byte) 
 	if err != nil {
 		return err
 	}
+	ids, err := json.Marshal(n.LocationIDs)
+	if err != nil {
+		return err
+	}
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO route_cache (key, endpoint, profile, points, payload, expires_at)
-		VALUES ($1, $2, $3, $4, $5, now() + $6::interval)
+		INSERT INTO route_cache (key, endpoint, profile, points, location_ids, payload, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now() + $7::interval)
 		ON CONFLICT (key) DO UPDATE
 		   SET payload = excluded.payload, points = excluded.points,
+		       location_ids = excluded.location_ids,
 		       created_at = now(), last_used_at = now(), expires_at = excluded.expires_at, hits = 0`,
-		key, n.Endpoint, n.Profile, pts, payload, s.ttl.String())
+		key, n.Endpoint, n.Profile, pts, ids, payload, s.ttl.String())
 	return err
+}
+
+// PurgeByLocationID drops every cached journey that names a location.
+//
+// An id-keyed entry has a failure mode a coordinate-keyed one does not: if
+// a warehouse MOVES, its coordinates change and the old entry is simply
+// never asked for again, but its ID stays the same and would keep serving
+// the route to where the warehouse used to be, for the rest of the 90
+// days. Whoever moves a location calls this.
+func (s *Store) PurgeByLocationID(ctx context.Context, id string) (int64, error) {
+	ct, err := s.pool.Exec(ctx, `DELETE FROM route_cache WHERE location_ids @> to_jsonb($1::text)`, id)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
+}
+
+// PurgeNear drops every cached journey with a point within radiusM of
+// (lon, lat) — the coordinate-keyed equivalent, for a warehouse pin that
+// moved a little, or a lane whose fare is suspect.
+func (s *Store) PurgeNear(ctx context.Context, lon, lat, radiusM float64) (int64, error) {
+	ct, err := s.pool.Exec(ctx, `
+		DELETE FROM route_cache
+		 WHERE EXISTS (
+		   SELECT 1 FROM jsonb_array_elements(points) p
+		    WHERE ST_DWithin(
+		            ST_SetSRID(ST_MakePoint((p->>0)::float8, (p->>1)::float8), 4326)::geography,
+		            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3))`, lon, lat, radiusM)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
 }
 
 // Sweep deletes expired rows and returns how many went.
