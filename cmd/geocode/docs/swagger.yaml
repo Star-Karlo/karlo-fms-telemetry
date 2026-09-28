@@ -59,58 +59,223 @@ definitions:
       provinsi:
         type: string
     type: object
-  routecache.Answer:
+  routecache.APIError:
     properties:
-      cached:
-        type: boolean
-      cached_at:
+      error:
+        example: 'mapid: HTTP 400: out of bounds'
         type: string
-      hits:
-        type: integer
-      payload:
-        type: object
-      source:
-        description: mapid — the provider that produced it
+    type: object
+  routecache.GeoJSONLine:
+    properties:
+      coordinates:
+        description: |-
+          Coordinates are [lon, lat] pairs along the line, e.g.
+          [[106.8272,-6.1754], [106.8291,-6.1802], … , [110.4381,-7.0051]].
+        items:
+          items:
+            type: number
+          type: array
+        type: array
+      type:
+        example: LineString
+        type: string
+    type: object
+  routecache.GeoJSONPoint:
+    properties:
+      coordinates:
+        example:
+        - 106.815531
+        - -6.2236949
+        items:
+          type: number
+        type: array
+      type:
+        example: Point
         type: string
     type: object
   routecache.PurgeRequest:
     properties:
       lat:
+        example: -6.1754
         type: number
       location_id:
         description: LocationID drops every journey naming this id.
+        example: LOC-JKT-01
         type: string
       lon:
         description: |-
           Lon/Lat/RadiusM drops every journey with a point within the radius
           (default 200 m) — the coordinate equivalent.
+        example: 106.8272
         type: number
       radius_m:
+        example: 200
         type: number
+    type: object
+  routecache.RouteAnswer:
+    properties:
+      cached:
+        example: true
+        type: boolean
+      cached_at:
+        example: "2026-09-28T04:12:07Z"
+        type: string
+      hits:
+        example: 37
+        type: integer
+      payload:
+        $ref: '#/definitions/routecache.RoutePayload'
+      source:
+        example: mapid
+        type: string
     type: object
   routecache.RouteIDsRequest:
     properties:
       location_ids:
         description: 'LocationIDs: exactly two, loading point first.'
+        example:
+        - LOC-JKT-01
+        - LOC-SMG-04
         items:
           type: string
+        type: array
+    type: object
+  routecache.RoutePath:
+    properties:
+      ascend:
+        example: 1204.5
+        type: number
+      bbox:
+        example:
+        - 106.815
+        - -7.005
+        - 110.438
+        - -6.175
+        items:
+          type: number
+        type: array
+      descend:
+        example: 1198.2
+        type: number
+      distance:
+        example: 445023.495
+        type: number
+      points:
+        $ref: '#/definitions/routecache.GeoJSONLine'
+      points_encoded:
+        example: false
+        type: boolean
+      time:
+        example: 20009019
+        type: integer
+    type: object
+  routecache.RoutePayload:
+    properties:
+      paths:
+        items:
+          $ref: '#/definitions/routecache.RoutePath'
         type: array
     type: object
   routecache.RouteRequest:
     properties:
       points:
         description: |-
-          Points are [lon, lat] in TRAVEL ORDER — MAPID's order, and the order
-          the cache keys on.
+          Points are [lon, lat] in TRAVEL ORDER (the order MAPID takes, and the
+          order the cache keys on). At least two; waypoints are allowed.
+          e.g. [[106.8272,-6.1754], [110.4381,-7.0051]] — Jakarta to Semarang.
         items:
           items:
-            format: float64
             type: number
           type: array
         type: array
       profile:
-        description: truck (default) | car | motorcycle | foot
+        description: 'Profile: truck (the default), car, motorcycle or foot.'
+        example: truck
         type: string
+    type: object
+  routecache.TollAnswer:
+    properties:
+      cached:
+        example: false
+        type: boolean
+      cached_at:
+        example: "2026-09-28T04:12:07Z"
+        type: string
+      hits:
+        example: 12
+        type: integer
+      payload:
+        $ref: '#/definitions/routecache.TollPayload'
+      source:
+        example: mapid
+        type: string
+    type: object
+  routecache.TollGateEnd:
+    properties:
+      gate:
+        example: in
+        type: string
+      geometry:
+        $ref: '#/definitions/routecache.GeoJSONPoint'
+      name:
+        example: Cikampek Utama 1
+        type: string
+      prepaid:
+        example: true
+        type: boolean
+    type: object
+  routecache.TollPayload:
+    properties:
+      bbox:
+        example:
+        - 106.815
+        - -7.005
+        - 110.438
+        - -6.175
+        items:
+          type: number
+        type: array
+      details:
+        items:
+          $ref: '#/definitions/routecache.TollSegment'
+        type: array
+      distance:
+        example: 445023.495
+        type: number
+      eta:
+        example: 2670.14
+        type: number
+      prices:
+        $ref: '#/definitions/routecache.TollPrices'
+      route:
+        $ref: '#/definitions/routecache.GeoJSONLine'
+    type: object
+  routecache.TollPrices:
+    properties:
+      golongan_1:
+        example: 432000
+        type: integer
+      golongan_2:
+        example: 665500
+        type: integer
+      golongan_3:
+        example: 665500
+        type: integer
+      golongan_4:
+        example: 874500
+        type: integer
+      golongan_5:
+        example: 874500
+        type: integer
+    type: object
+  routecache.TollSegment:
+    properties:
+      from:
+        $ref: '#/definitions/routecache.TollGateEnd'
+      price:
+        $ref: '#/definitions/routecache.TollPrices'
+      to:
+        $ref: '#/definitions/routecache.TollGateEnd'
     type: object
 info:
   contact: {}
@@ -216,26 +381,20 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/routecache.Answer'
+            $ref: '#/definitions/routecache.RouteAnswer'
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
         "502":
           description: MAPID refused or was unreachable; its own message is passed
             through
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
       security:
       - ServiceToken: []
       summary: Route between points (cached)
@@ -310,25 +469,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/routecache.Answer'
+            $ref: '#/definitions/routecache.RouteAnswer'
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
         "502":
           description: Bad Gateway
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
       security:
       - ServiceToken: []
       summary: Route between two Karlo location ids (cached)
@@ -361,25 +514,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/routecache.Answer'
+            $ref: '#/definitions/routecache.TollAnswer'
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
         "401":
           description: Unauthorized
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
         "502":
           description: Bad Gateway
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/routecache.APIError'
       security:
       - ServiceToken: []
       summary: Route with toll fares (cached)

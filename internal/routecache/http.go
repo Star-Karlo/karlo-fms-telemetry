@@ -61,25 +61,27 @@ func (h *Handler) requireToken(next http.Handler) http.Handler {
 // coordinates (MAPID's /v4/route).
 type RouteIDsRequest struct {
 	// LocationIDs: exactly two, loading point first.
-	LocationIDs []string `json:"location_ids"`
+	LocationIDs []string `json:"location_ids" swaggertype:"array,string" example:"LOC-JKT-01,LOC-SMG-04"`
 }
 
 // PurgeRequest drops cached journeys after a place has moved.
 type PurgeRequest struct {
 	// LocationID drops every journey naming this id.
-	LocationID string `json:"location_id,omitempty"`
+	LocationID string `json:"location_id,omitempty" example:"LOC-JKT-01"`
 	// Lon/Lat/RadiusM drops every journey with a point within the radius
 	// (default 200 m) — the coordinate equivalent.
-	Lon     float64 `json:"lon,omitempty"`
-	Lat     float64 `json:"lat,omitempty"`
-	RadiusM float64 `json:"radius_m,omitempty"`
+	Lon     float64 `json:"lon,omitempty" example:"106.8272"`
+	Lat     float64 `json:"lat,omitempty" example:"-6.1754"`
+	RadiusM float64 `json:"radius_m,omitempty" example:"200"`
 }
 
 type RouteRequest struct {
-	// Points are [lon, lat] in TRAVEL ORDER — MAPID's order, and the order
-	// the cache keys on.
-	Points  [][2]float64 `json:"points"`
-	Profile string       `json:"profile,omitempty"` // truck (default) | car | motorcycle | foot
+	// Points are [lon, lat] in TRAVEL ORDER (the order MAPID takes, and the
+	// order the cache keys on). At least two; waypoints are allowed.
+	// e.g. [[106.8272,-6.1754], [110.4381,-7.0051]] — Jakarta to Semarang.
+	Points [][2]float64 `json:"points" swaggertype:"array,array,number"`
+	// Profile: truck (the default), car, motorcycle or foot.
+	Profile string `json:"profile,omitempty" example:"truck"`
 }
 
 // route godoc
@@ -90,10 +92,10 @@ type RouteRequest struct {
 //	@Accept			json
 //	@Produce		json
 //	@Param			body	body		RouteRequest	true	"points + profile"
-//	@Success		200		{object}	Answer
-//	@Failure		400		{object}	map[string]string
-//	@Failure		401		{object}	map[string]string
-//	@Failure		502		{object}	map[string]string	"MAPID refused or was unreachable; its own message is passed through"
+//	@Success		200		{object}	RouteAnswer
+//	@Failure		400		{object}	APIError
+//	@Failure		401		{object}	APIError
+//	@Failure		502		{object}	APIError	"MAPID refused or was unreachable; its own message is passed through"
 //	@Security		ServiceToken
 //	@Router			/v1/route [post]
 func (h *Handler) route(w http.ResponseWriter, r *http.Request) { h.answer(w, r, "route") }
@@ -106,10 +108,10 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) { h.answer(w, r,
 //	@Accept			json
 //	@Produce		json
 //	@Param			body	body		RouteRequest	true	"points + profile"
-//	@Success		200		{object}	Answer
-//	@Failure		400		{object}	map[string]string
-//	@Failure		401		{object}	map[string]string
-//	@Failure		502		{object}	map[string]string
+//	@Success		200		{object}	TollAnswer
+//	@Failure		400		{object}	APIError
+//	@Failure		401		{object}	APIError
+//	@Failure		502		{object}	APIError
 //	@Security		ServiceToken
 //	@Router			/v1/route-toll [post]
 func (h *Handler) routeToll(w http.ResponseWriter, r *http.Request) { h.answer(w, r, "route_toll") }
@@ -122,10 +124,10 @@ func (h *Handler) routeToll(w http.ResponseWriter, r *http.Request) { h.answer(w
 //	@Accept			json
 //	@Produce		json
 //	@Param			body	body		RouteIDsRequest	true	"two location ids, loading point first"
-//	@Success		200		{object}	Answer
-//	@Failure		400		{object}	map[string]string
-//	@Failure		401		{object}	map[string]string
-//	@Failure		502		{object}	map[string]string
+//	@Success		200		{object}	RouteAnswer
+//	@Failure		400		{object}	APIError
+//	@Failure		401		{object}	APIError
+//	@Failure		502		{object}	APIError
 //	@Security		ServiceToken
 //	@Router			/v1/route-ids [post]
 func (h *Handler) routeIDs(w http.ResponseWriter, r *http.Request) {

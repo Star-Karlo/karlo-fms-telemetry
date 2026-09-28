@@ -140,34 +140,25 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/routecache.Answer"
+                            "$ref": "#/definitions/routecache.RouteAnswer"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     },
                     "502": {
                         "description": "MAPID refused or was unreachable; its own message is passed through",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     }
                 }
@@ -267,34 +258,25 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/routecache.Answer"
+                            "$ref": "#/definitions/routecache.RouteAnswer"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     },
                     "502": {
                         "description": "Bad Gateway",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     }
                 }
@@ -333,34 +315,25 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/routecache.Answer"
+                            "$ref": "#/definitions/routecache.TollAnswer"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     },
                     "502": {
                         "description": "Bad Gateway",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/routecache.APIError"
                         }
                     }
                 }
@@ -454,24 +427,50 @@
                 }
             }
         },
-        "routecache.Answer": {
+        "routecache.APIError": {
             "type": "object",
             "properties": {
-                "cached": {
-                    "type": "boolean"
+                "error": {
+                    "type": "string",
+                    "example": "mapid: HTTP 400: out of bounds"
+                }
+            }
+        },
+        "routecache.GeoJSONLine": {
+            "type": "object",
+            "properties": {
+                "coordinates": {
+                    "description": "Coordinates are [lon, lat] pairs along the line, e.g.\n[[106.8272,-6.1754], [106.8291,-6.1802], … , [110.4381,-7.0051]].",
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "number"
+                        }
+                    }
                 },
-                "cached_at": {
-                    "type": "string"
+                "type": {
+                    "type": "string",
+                    "example": "LineString"
+                }
+            }
+        },
+        "routecache.GeoJSONPoint": {
+            "type": "object",
+            "properties": {
+                "coordinates": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    },
+                    "example": [
+                        106.815531,
+                        -6.2236949
+                    ]
                 },
-                "hits": {
-                    "type": "integer"
-                },
-                "payload": {
-                    "type": "object"
-                },
-                "source": {
-                    "description": "mapid — the provider that produced it",
-                    "type": "string"
+                "type": {
+                    "type": "string",
+                    "example": "Point"
                 }
             }
         },
@@ -479,18 +478,46 @@
             "type": "object",
             "properties": {
                 "lat": {
-                    "type": "number"
+                    "type": "number",
+                    "example": -6.1754
                 },
                 "location_id": {
                     "description": "LocationID drops every journey naming this id.",
-                    "type": "string"
+                    "type": "string",
+                    "example": "LOC-JKT-01"
                 },
                 "lon": {
                     "description": "Lon/Lat/RadiusM drops every journey with a point within the radius\n(default 200 m) — the coordinate equivalent.",
-                    "type": "number"
+                    "type": "number",
+                    "example": 106.8272
                 },
                 "radius_m": {
-                    "type": "number"
+                    "type": "number",
+                    "example": 200
+                }
+            }
+        },
+        "routecache.RouteAnswer": {
+            "type": "object",
+            "properties": {
+                "cached": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "cached_at": {
+                    "type": "string",
+                    "example": "2026-09-28T04:12:07Z"
+                },
+                "hits": {
+                    "type": "integer",
+                    "example": 37
+                },
+                "payload": {
+                    "$ref": "#/definitions/routecache.RoutePayload"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "mapid"
                 }
             }
         },
@@ -502,6 +529,61 @@
                     "type": "array",
                     "items": {
                         "type": "string"
+                    },
+                    "example": [
+                        "LOC-JKT-01",
+                        "LOC-SMG-04"
+                    ]
+                }
+            }
+        },
+        "routecache.RoutePath": {
+            "type": "object",
+            "properties": {
+                "ascend": {
+                    "type": "number",
+                    "example": 1204.5
+                },
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    },
+                    "example": [
+                        106.815,
+                        -7.005,
+                        110.438,
+                        -6.175
+                    ]
+                },
+                "descend": {
+                    "type": "number",
+                    "example": 1198.2
+                },
+                "distance": {
+                    "type": "number",
+                    "example": 445023.495
+                },
+                "points": {
+                    "$ref": "#/definitions/routecache.GeoJSONLine"
+                },
+                "points_encoded": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "time": {
+                    "type": "integer",
+                    "example": 20009019
+                }
+            }
+        },
+        "routecache.RoutePayload": {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/routecache.RoutePath"
                     }
                 }
             }
@@ -510,19 +592,139 @@
             "type": "object",
             "properties": {
                 "points": {
-                    "description": "Points are [lon, lat] in TRAVEL ORDER — MAPID's order, and the order\nthe cache keys on.",
+                    "description": "Points are [lon, lat] in TRAVEL ORDER (the order MAPID takes, and the\norder the cache keys on). At least two; waypoints are allowed.\ne.g. [[106.8272,-6.1754], [110.4381,-7.0051]] — Jakarta to Semarang.",
                     "type": "array",
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number",
-                            "format": "float64"
+                            "type": "number"
                         }
                     }
                 },
                 "profile": {
-                    "description": "truck (default) | car | motorcycle | foot",
-                    "type": "string"
+                    "description": "Profile: truck (the default), car, motorcycle or foot.",
+                    "type": "string",
+                    "example": "truck"
+                }
+            }
+        },
+        "routecache.TollAnswer": {
+            "type": "object",
+            "properties": {
+                "cached": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "cached_at": {
+                    "type": "string",
+                    "example": "2026-09-28T04:12:07Z"
+                },
+                "hits": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "payload": {
+                    "$ref": "#/definitions/routecache.TollPayload"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "mapid"
+                }
+            }
+        },
+        "routecache.TollGateEnd": {
+            "type": "object",
+            "properties": {
+                "gate": {
+                    "type": "string",
+                    "example": "in"
+                },
+                "geometry": {
+                    "$ref": "#/definitions/routecache.GeoJSONPoint"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Cikampek Utama 1"
+                },
+                "prepaid": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "routecache.TollPayload": {
+            "type": "object",
+            "properties": {
+                "bbox": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    },
+                    "example": [
+                        106.815,
+                        -7.005,
+                        110.438,
+                        -6.175
+                    ]
+                },
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/routecache.TollSegment"
+                    }
+                },
+                "distance": {
+                    "type": "number",
+                    "example": 445023.495
+                },
+                "eta": {
+                    "type": "number",
+                    "example": 2670.14
+                },
+                "prices": {
+                    "$ref": "#/definitions/routecache.TollPrices"
+                },
+                "route": {
+                    "$ref": "#/definitions/routecache.GeoJSONLine"
+                }
+            }
+        },
+        "routecache.TollPrices": {
+            "type": "object",
+            "properties": {
+                "golongan_1": {
+                    "type": "integer",
+                    "example": 432000
+                },
+                "golongan_2": {
+                    "type": "integer",
+                    "example": 665500
+                },
+                "golongan_3": {
+                    "type": "integer",
+                    "example": 665500
+                },
+                "golongan_4": {
+                    "type": "integer",
+                    "example": 874500
+                },
+                "golongan_5": {
+                    "type": "integer",
+                    "example": 874500
+                }
+            }
+        },
+        "routecache.TollSegment": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "$ref": "#/definitions/routecache.TollGateEnd"
+                },
+                "price": {
+                    "$ref": "#/definitions/routecache.TollPrices"
+                },
+                "to": {
+                    "$ref": "#/definitions/routecache.TollGateEnd"
                 }
             }
         }
