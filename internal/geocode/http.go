@@ -19,7 +19,7 @@ func (s *Service) Routes(r chi.Router) {
 // handleSearch godoc
 //
 //	@Summary		Forward geocode: an address or place name to candidate pins (Indonesia)
-//	@Description	Searches the service's own road and administrative-area data (no external provider). "Jl. Raya Bekasi, Cikarang Utara": the part before the first comma is the road or area, the rest narrows the area. Roads first, then kelurahan / kecamatan / kabupaten. Not house-number precise. Requires a platform service token as Bearer.
+//	@Description	Searches the road and administrative-area data held by this service (no external provider). "Jl. Raya Bekasi, Cikarang Utara": the part before the first comma is the road or area, the rest narrows the area. Roads first, then kelurahan / kecamatan / kabupaten. Not house-number precise. Requires a platform service token as Bearer.
 //	@Tags			geocode
 //	@Produce		json
 //	@Security		ServiceToken

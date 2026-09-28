@@ -85,7 +85,7 @@ type RouteRequest struct {
 // route godoc
 //
 //	@Summary		Route between points (cached)
-//	@Description	MAPID's routing answer for these points, served from the shared cache when it has been asked before and bought upstream when it has not. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries MAPID's payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.
+//	@Description	the routing answer from MAPID for these points, served from the shared cache when it has been asked before and bought upstream when it has not. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.
 //	@Tags			routing
 //	@Accept			json
 //	@Produce		json
@@ -101,7 +101,7 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) { h.answer(w, r,
 // routeToll godoc
 //
 //	@Summary		Route with toll fares (cached)
-//	@Description	As /v1/route, with MAPID's toll pricing. IF YOU NEED BOTH THE ROUTE AND THE FARE, CALL ONLY THIS: the payload carries `route`, `distance` and `eta` alongside `prices`, so asking /v1/route as well buys a second answer for something you already have — and one computation means the fare and the geometry cannot describe slightly different roads. `prices` is the total per golongan, the figure to use; `details` are the gates as evidence, naming both ends of each segment, and their prices are a partition of the total rather than charges to add up. All five golongan come back in one answer, so the caller picks its class and the cache holds one entry per journey rather than five.
+//	@Description	As /v1/route, with toll pricing from MAPID. IF YOU NEED BOTH THE ROUTE AND THE FARE, CALL ONLY THIS: the payload carries `route`, `distance` and `eta` alongside `prices`, so asking /v1/route as well buys a second answer for something you already have — and one computation means the fare and the geometry cannot describe slightly different roads. `prices` is the total per golongan, the figure to use; `details` are the gates as evidence, naming both ends of each segment, and their prices are a partition of the total rather than charges to add up. All five golongan come back in one answer, so the caller picks its class and the cache holds one entry per journey rather than five.
 //	@Tags			routing
 //	@Accept			json
 //	@Produce		json
@@ -117,7 +117,7 @@ func (h *Handler) routeToll(w http.ResponseWriter, r *http.Request) { h.answer(w
 // routeIDs godoc
 //
 //	@Summary		Route between two Karlo location ids (cached)
-//	@Description	MAPID's /v4/route, which takes Karlo's own location ids registered with MAPID rather than coordinates — it may know a yard or gate centroid that a dropped pin does not hit, so its answer can differ from the coordinate route for the same pair. Cached on the id pair, which is a steadier key than coordinates. A pair MAPID does not recognise comes back 502 and is not cached, so a caller can fall back to /v1/route exactly as it does today. If a location MOVES, call /v1/route-cache/purge with its id — the id does not change when the place does.
+//	@Description	the /v4/route endpoint, which takes Karlo location ids registered with MAPID rather than coordinates — it may know a yard or gate centroid that a dropped pin does not hit, so its answer can differ from the coordinate route for the same pair. Cached on the id pair, which is a steadier key than coordinates. A pair MAPID does not recognise comes back 502 and is not cached, so a caller can fall back to /v1/route exactly as it does today. If a location MOVES, call /v1/route-cache/purge with its id — the id does not change when the place does.
 //	@Tags			routing
 //	@Accept			json
 //	@Produce		json

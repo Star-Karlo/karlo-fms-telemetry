@@ -2,7 +2,7 @@
 //
 //	@title			Karlo FMS Geocode Service
 //	@version		0.1
-//	@description	Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll — MAPID's answers kept 90 days in Postgres so the same lane is never bought twice). They share a service because they share a database and a deploy, not because they are the same thing: geocode answers from our own data, routing caches somebody else\'s.
+//	@description	Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll — MAPID's answers kept 90 days in Postgres so the same lane is never bought twice). They share a service because they share a database and a deploy, not because they are the same thing: geocode answers from our own data, routing caches an upstream provider's.
 //	@BasePath		/
 //
 //	@securityDefinitions.apikey	ServiceToken
