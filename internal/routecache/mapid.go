@@ -16,6 +16,17 @@ import (
 // MAPID is the upstream. Every call through it costs money, which is the
 // whole reason this service exists: nothing here is called unless the cache
 // missed.
+//
+// THE KEY IS PUBLIC BY CONSTRUCTION. Nathanael decided (2026-09-28) that the
+// service uses the same MAPID key the console ships to browsers as its
+// basemap key, rather than a separate server-side one. It is held in SSM and
+// never logged here, but it is readable in any page's source, so it is not a
+// secret and must not be treated as one. The practical consequence is for
+// whoever investigates a bill: a jump in MAPID usage is somebody else
+// spending the quota at least as plausibly as a caller of this service, so
+// check the page before you go hunting for a cache miss. Splitting it into a
+// referrer-restricted public key and a private routing key remains possible
+// later and changes nothing here but the value.
 type MAPID struct {
 	http    *http.Client
 	baseURL string
