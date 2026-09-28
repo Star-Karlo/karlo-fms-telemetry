@@ -64,3 +64,32 @@ func TestLocationIDJourneys(t *testing.T) {
 		t.Error("an id journey collided with a coordinate journey")
 	}
 }
+
+// Every routing option changes the answer, so each must change the key —
+// otherwise a caller asking for three routes is served somebody else's one,
+// or a turn-by-turn request comes back without steps.
+func TestRoutingOptionsAreePartOfTheKey(t *testing.T) {
+	pts := []Point{{106.8272, -6.1754}, {110.4381, -7.0051}}
+	base := Request{Endpoint: "route", Profile: "truck", Points: pts}
+	for name, r := range map[string]Request{
+		"instructions": {Endpoint: "route", Profile: "truck", Points: pts, Instructions: true},
+		"elevation":    {Endpoint: "route", Profile: "truck", Points: pts, Elevation: true},
+		"alternatives": {Endpoint: "route", Profile: "truck", Points: pts, Alternatives: 3},
+		"snap":         {Endpoint: "route", Profile: "truck", Points: pts, SnapPreventions: []string{"ferry"}},
+	} {
+		if string(r.Key()) == string(base.Key()) {
+			t.Errorf("%s did not change the key — the plain answer would be served for it", name)
+		}
+	}
+	// ...but the ORDER of snap preventions must not split the cache.
+	a := Request{Endpoint: "route", Points: pts, SnapPreventions: []string{"ferry", "tunnel", "motorway"}}
+	b := Request{Endpoint: "route", Points: pts, SnapPreventions: []string{"MOTORWAY", " tunnel ", "ferry"}}
+	if string(a.Key()) != string(b.Key()) {
+		t.Error("the same preventions listed in a different order produced two keys")
+	}
+	// alternatives:1 is "one route", i.e. the default — not a third variant.
+	one := Request{Endpoint: "route", Profile: "truck", Points: pts, Alternatives: 1}
+	if string(one.Key()) != string(base.Key()) {
+		t.Error("alternatives:1 keyed differently from no alternatives")
+	}
+}

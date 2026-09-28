@@ -28,10 +28,6 @@ const (
 	mapidTimeout = 60 * time.Second
 	// The body cap: a long route's geometry is large but never this large.
 	mapidMaxBody = 8 << 20
-	// tollTypeUpstream is the class we always ASK for. The response prices
-	// every golongan, so this affects nothing in the answer and keeps one
-	// cache entry per journey (see Request).
-	tollTypeUpstream = 1
 )
 
 func NewMAPID(baseURL, key string) *MAPID {
@@ -67,8 +63,30 @@ func (m *MAPID) Configured() bool { return m != nil && m.key != "" }
 // points_encoded stays FALSE: nothing in the estate decodes a polyline
 // (there is no decoder in any repo), and GeoJSON is the richer form. It is
 // therefore not part of the cache key either — one entry per lane.
-func (m *MAPID) Route(ctx context.Context, profile string, points []Point) ([]byte, error) {
-	body := map[string]any{"profile": profile, "points": points, "points_encoded": false}
+func (m *MAPID) Route(ctx context.Context, r Request) ([]byte, error) {
+	body := map[string]any{
+		"profile":        r.Profile,
+		"points":         r.Points,
+		"points_encoded": false,
+		// Measured 2026-09-28: turn-by-turn is ~10% of the answer and
+		// nothing in the estate reads it, so it is off unless asked for.
+		// NOTE the spelling — MAPID's own documentation writes
+		// "insctructions", which the API ignores, so a body copied from it
+		// silently keeps the instructions it meant to drop.
+		"instructions": r.Instructions,
+		"elevation":    r.Elevation,
+	}
+	if len(r.SnapPreventions) > 0 {
+		body["snap_preventions"] = r.SnapPreventions
+	}
+	// Alternatives are honoured only for a two-point journey; with a
+	// waypoint MAPID quietly returns one path (the caller is refused
+	// upstream of here rather than being given a silent single route).
+	if r.Alternatives > 1 {
+		body["algorithm"] = "alternative_route"
+		body["alternative_route"] = true
+		body["alternative_route.max_paths"] = r.Alternatives
+	}
 	return m.post(ctx, "/", body)
 }
 
@@ -106,7 +124,11 @@ func (m *MAPID) RouteByIDs(ctx context.Context, ids []string, pointsEncoded bool
 // five golongan and the gates as {from, to, price}, so one cached entry
 // serves every truck class.
 func (m *MAPID) RouteToll(ctx context.Context, profile string, points []Point) ([]byte, error) {
-	body := map[string]any{"profile": profile, "points": points, "tollType": tollTypeUpstream}
+	// {profile, points} is the whole body: tollType is not needed (measured
+	// 2026-09-28 — the answer prices all five golongan either way), so it
+	// is not sent and cannot be mistaken for something that narrows the
+	// answer.
+	body := map[string]any{"profile": profile, "points": points}
 	return m.post(ctx, "/v2/route_n_toll", body)
 }
 

@@ -5,6 +5,7 @@ package routecache
 import (
 	"crypto/sha256"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -47,6 +48,23 @@ type Request struct {
 	// warehouse pair is one entry for ever. Set for endpoint "route_ids"
 	// and empty otherwise.
 	LocationIDs []string
+
+	// Routing options, each of which CHANGES THE ANSWER and therefore the
+	// identity of the request: two callers asking the same journey with
+	// different options must not share an entry.
+	//
+	// Instructions asks for turn-by-turn. Off by default: it is about 10%
+	// of the payload and almost nothing reads it.
+	Instructions bool
+	// Elevation adds a third value to every coordinate.
+	Elevation bool
+	// Alternatives asks for up to N routes instead of one (2 or 3). MAPID
+	// only honours it for a two-point journey.
+	Alternatives int
+	// SnapPreventions keeps the route off "motorway", "ferry", "tunnel"
+	// and the like. Sorted before it enters the key, so the order a caller
+	// happens to list them in does not split the cache.
+	SnapPreventions []string
 }
 
 // Normalise fills in the defaults and rounds the coordinates, so two callers
@@ -65,6 +83,16 @@ func (r Request) Normalise() Request {
 			out.LocationIDs = append(out.LocationIDs, id)
 		}
 	}
+	out.Instructions, out.Elevation = r.Instructions, r.Elevation
+	if r.Alternatives > 1 {
+		out.Alternatives = r.Alternatives
+	}
+	for _, sp := range r.SnapPreventions {
+		if sp = strings.ToLower(strings.TrimSpace(sp)); sp != "" {
+			out.SnapPreventions = append(out.SnapPreventions, sp)
+		}
+	}
+	sort.Strings(out.SnapPreventions)
 	for _, p := range r.Points {
 		out.Points = append(out.Points, Point{round(p[0]), round(p[1])})
 	}
@@ -87,6 +115,14 @@ func (r Request) Key() []byte {
 	b.WriteString(n.Endpoint)
 	b.WriteByte('|')
 	b.WriteString(n.Profile)
+	b.WriteByte('|')
+	b.WriteString(strconv.FormatBool(n.Instructions))
+	b.WriteByte(strconv.FormatBool(n.Elevation)[0])
+	b.WriteString(strconv.Itoa(n.Alternatives))
+	for _, sp := range n.SnapPreventions {
+		b.WriteByte('+')
+		b.WriteString(sp)
+	}
 	// Ids and points never mix: a journey is named one way or the other,
 	// and ORDER IS IDENTITY in both (loading point first, unloading second).
 	for _, id := range n.LocationIDs {

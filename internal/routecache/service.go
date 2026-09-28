@@ -33,6 +33,10 @@ var ErrNoPoints = errors.New("at least two points are required")
 // ErrNoIDs is an id-routed request without exactly two ids.
 var ErrNoIDs = errors.New("exactly two location ids are required")
 
+// ErrAlternativesNeedTwoPoints is alternatives asked for on a journey with
+// waypoints, which MAPID cannot answer.
+var ErrAlternativesNeedTwoPoints = errors.New("alternatives are only available for a journey of exactly two points")
+
 // Get returns the answer for r, buying it upstream on a miss.
 func (s *Service) Get(ctx context.Context, r Request) (Answer, error) {
 	if r.Endpoint == "route_ids" {
@@ -41,6 +45,12 @@ func (s *Service) Get(ctx context.Context, r Request) (Answer, error) {
 		}
 	} else if len(r.Points) < 2 {
 		return Answer{}, ErrNoPoints
+	}
+	// Refused rather than quietly answered with one route: MAPID honours
+	// alternatives only between two points, and a caller that asked for
+	// three and silently received one would not know to look.
+	if r.Alternatives > 1 && len(r.Points) != 2 {
+		return Answer{}, ErrAlternativesNeedTwoPoints
 	}
 	n := r.Normalise()
 	key := n.Key()
@@ -74,7 +84,7 @@ func (s *Service) Get(ctx context.Context, r Request) (Answer, error) {
 	case "route_ids":
 		payload, err = s.up.RouteByIDs(ctx, n.LocationIDs, false)
 	default:
-		payload, err = s.up.Route(ctx, n.Profile, n.Points)
+		payload, err = s.up.Route(ctx, n)
 	}
 	if err != nil {
 		return Answer{}, err

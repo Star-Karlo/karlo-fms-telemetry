@@ -82,12 +82,24 @@ type RouteRequest struct {
 	Points [][2]float64 `json:"points" swaggertype:"array,array,number"`
 	// Profile: truck (the default), car, motorcycle or foot.
 	Profile string `json:"profile,omitempty" example:"truck"`
+	// Instructions asks for turn-by-turn steps. Off by default — they are
+	// about a tenth of the answer and most callers never read them.
+	Instructions bool `json:"instructions,omitempty" example:"false"`
+	// Elevation adds a third value to every coordinate.
+	Elevation bool `json:"elevation,omitempty" example:"false"`
+	// Alternatives asks for up to N routes (2 or 3) instead of one. Only
+	// for a journey of exactly two points; with a waypoint the request is
+	// refused rather than quietly answered with a single route.
+	Alternatives int `json:"alternatives,omitempty" example:"3"`
+	// SnapPreventions keeps the route off the named road kinds, e.g.
+	// ["motorway","ferry","tunnel"]. Order does not matter.
+	SnapPreventions []string `json:"snap_preventions,omitempty" swaggertype:"array,string" example:"ferry,tunnel"`
 }
 
 // route godoc
 //
 //	@Summary		Route between points (cached)
-//	@Description	the routing answer from MAPID for these points, served from the shared cache when it has been asked before and bought upstream when it has not. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.
+//	@Description	The routing answer from MAPID for these points, served from the shared cache when it has been asked before and bought upstream when it has not. Options (instructions, elevation, alternatives, snap_preventions) are part of the identity of a request: the same journey asked with different options is a different cached answer, so ask for what you will read and no more. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.
 //	@Tags			routing
 //	@Accept			json
 //	@Produce		json
@@ -198,10 +210,14 @@ func (h *Handler) answer(w http.ResponseWriter, r *http.Request, endpoint string
 	for _, p := range req.Points {
 		pts = append(pts, Point{p[0], p[1]})
 	}
-	ans, err := h.svc.Get(r.Context(), Request{Endpoint: endpoint, Profile: req.Profile, Points: pts})
+	ans, err := h.svc.Get(r.Context(), Request{
+		Endpoint: endpoint, Profile: req.Profile, Points: pts,
+		Instructions: req.Instructions, Elevation: req.Elevation,
+		Alternatives: req.Alternatives, SnapPreventions: req.SnapPreventions,
+	})
 	switch {
 	case err == nil:
-	case err == ErrNoPoints:
+	case err == ErrNoPoints || err == ErrAlternativesNeedTwoPoints:
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	default:

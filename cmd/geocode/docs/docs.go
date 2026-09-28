@@ -121,7 +121,7 @@ const docTemplate = `{
                         "ServiceToken": []
                     }
                 ],
-                "description": "the routing answer from MAPID for these points, served from the shared cache when it has been asked before and bought upstream when it has not. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under ` + "`" + `payload` + "`" + `, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.",
+                "description": "The routing answer from MAPID for these points, served from the shared cache when it has been asked before and bought upstream when it has not. Options (instructions, elevation, alternatives, snap_preventions) are part of the identity of a request: the same journey asked with different options is a different cached answer, so ask for what you will read and no more. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under ` + "`" + `payload` + "`" + `, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.",
                 "consumes": [
                     "application/json"
                 ],
@@ -598,6 +598,21 @@ const docTemplate = `{
         "routecache.RouteRequest": {
             "type": "object",
             "properties": {
+                "alternatives": {
+                    "description": "Alternatives asks for up to N routes (2 or 3) instead of one. Only\nfor a journey of exactly two points; with a waypoint the request is\nrefused rather than quietly answered with a single route.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "elevation": {
+                    "description": "Elevation adds a third value to every coordinate.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "instructions": {
+                    "description": "Instructions asks for turn-by-turn steps. Off by default — they are\nabout a tenth of the answer and most callers never read them.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "points": {
                     "description": "Points are [lon, lat] in TRAVEL ORDER (the order MAPID takes, and the\norder the cache keys on). At least two; waypoints are allowed.\ne.g. [[106.8272,-6.1754], [110.4381,-7.0051]] — Jakarta to Semarang.",
                     "type": "array",
@@ -612,6 +627,17 @@ const docTemplate = `{
                     "description": "Profile: truck (the default), car, motorcycle or foot.",
                     "type": "string",
                     "example": "truck"
+                },
+                "snap_preventions": {
+                    "description": "SnapPreventions keeps the route off the named road kinds, e.g.\n[\"motorway\",\"ferry\",\"tunnel\"]. Order does not matter.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "ferry",
+                        "tunnel"
+                    ]
                 }
             }
         },
