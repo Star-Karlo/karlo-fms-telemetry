@@ -94,12 +94,20 @@ func (m *MAPID) RouteByIDs(ctx context.Context, ids []string, pointsEncoded bool
 
 // RouteToll asks for a path priced by toll gate.
 //
-// /v2/route_n_toll/rute, not the /v2/route_n_toll the old backend calls:
-// the /rute variant is the one that returns per-gate names, coordinates and
-// prices per golongan, which is what an allowance has to be evidenced from.
+// /v2/route_n_toll, which is what the old backend calls. The /rute variant
+// TMS uses rejects this body — measured against MAPID on 2026-09-28:
+//
+//	POST /v2/route_n_toll/rute  400 "Cannot read properties of undefined (reading 'coordinates')"
+//	POST /v2/route_n_toll       200 {route, prices, details, distance, eta, bbox}
+//
+// so /rute prices an ALREADY COMPUTED route (it wants coordinates handed to
+// it) while this one routes and prices in a single call, which is what a
+// caller asking "what does this journey cost" wants. The answer carries all
+// five golongan and the gates as {from, to, price}, so one cached entry
+// serves every truck class.
 func (m *MAPID) RouteToll(ctx context.Context, profile string, points []Point) ([]byte, error) {
 	body := map[string]any{"profile": profile, "points": points, "tollType": tollTypeUpstream}
-	return m.post(ctx, "/v2/route_n_toll/rute", body)
+	return m.post(ctx, "/v2/route_n_toll", body)
 }
 
 // post sends one request, retrying a 5xx once. A 4xx is never retried: its
