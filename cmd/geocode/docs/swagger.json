@@ -114,7 +114,7 @@
                         "ServiceToken": []
                     }
                 ],
-                "description": "MAPID's routing answer for these points, served from the shared cache when it has been asked before and bought upstream when it has not. The response carries MAPID's payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.",
+                "description": "MAPID's routing answer for these points, served from the shared cache when it has been asked before and bought upstream when it has not. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries MAPID's payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.",
                 "consumes": [
                     "application/json"
                 ],
@@ -307,7 +307,7 @@
                         "ServiceToken": []
                     }
                 ],
-                "description": "As /v1/route, with MAPID's toll pricing. The payload carries `prices` (the total per golongan — the figure to use) and `details` (the gates, as evidence: the per-gate prices are a partition of the total, not charges to add up). All five golongan come back in one answer, so the caller picks the class it needs and the cache holds one entry per journey rather than five.",
+                "description": "As /v1/route, with MAPID's toll pricing. IF YOU NEED BOTH THE ROUTE AND THE FARE, CALL ONLY THIS: the payload carries `route`, `distance` and `eta` alongside `prices`, so asking /v1/route as well buys a second answer for something you already have — and one computation means the fare and the geometry cannot describe slightly different roads. `prices` is the total per golongan, the figure to use; `details` are the gates as evidence, naming both ends of each segment, and their prices are a partition of the total rather than charges to add up. All five golongan come back in one answer, so the caller picks its class and the cache holds one entry per journey rather than five.",
                 "consumes": [
                     "application/json"
                 ],
