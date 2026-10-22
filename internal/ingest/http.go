@@ -113,7 +113,7 @@ func (h *Handler) Routes(r chi.Router) {
 	// telemetry client, business-service's — so this locks out only the
 	// public. The browser never calls this service; it goes through fms-api.
 	r.Group(func(pr chi.Router) {
-		pr.Use(h.requireKey)
+		pr.Use(h.RequireKey)
 		if h.green != nil {
 			pr.Get("/v1/driving-events", h.green.handleEvents)
 		}
@@ -128,9 +128,13 @@ func (h *Handler) Routes(r chi.Router) {
 	})
 }
 
-// requireKey refuses a request that does not present a valid X-Ingest-Key,
+// RequireKey refuses a request that does not present a valid X-Ingest-Key,
 // using the same check the write path applies.
-func (h *Handler) requireKey(next http.Handler) http.Handler {
+//
+// Exported because not every read route is registered inside Routes — the
+// daily rollup is mounted by its own service in main — and the one that was
+// not went unprotected for exactly that reason.
+func (h *Handler) RequireKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !h.AuthorizedRead(r) {
 			http.Error(w, `{"error":"missing or invalid X-Ingest-Key or service token"}`, http.StatusUnauthorized)

@@ -138,7 +138,19 @@ func main() {
 	// per request is not an option — the aggregate over raw telemetry is ~15s
 	// for a single day.
 	vd := ingest.NewVehicleDay(pool)
-	vd.Route(r)
+	// Behind the key, like every other read.
+	//
+	// It was not, and it answered anyone: GET /v1/stats/daily with no header
+	// returned per-device distance, moving and idle hours for EVERY IMEI on
+	// the platform, for any date range — the same leak /v1/live had until
+	// 2026-09-15, missed then because this route is registered here rather
+	// than inside Handler.Routes. Every legitimate caller already sends the
+	// key (fms-backend's telemetry client sets it on every request), so this
+	// locks out the public and nothing else.
+	r.Group(func(pr chi.Router) {
+		pr.Use(h.RequireKey)
+		vd.Route(pr)
+	})
 	go vd.RunRollup(ctx, retentionDays)
 
 	// VSS alarm feed: poll the evidence endpoint for recent events per device,
