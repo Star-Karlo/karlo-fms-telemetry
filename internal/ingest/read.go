@@ -284,7 +284,7 @@ func (rd *Reader) History(ctx context.Context, imei string, from, to, cursor tim
 	if !cursor.IsZero() {
 		lower, strict = cursor, true
 	}
-	boundary := time.Now().UTC().AddDate(0, 0, -rd.retentionDays)
+	boundary := coldBoundary(rd.retentionDays)
 	need := limit + 1
 
 	var pts []Position
@@ -371,7 +371,7 @@ func (rd *Reader) HistoryProjected(ctx context.Context, imei string, from, to, c
 	if !cursor.IsZero() {
 		lower, strict = cursor, true
 	}
-	boundary := time.Now().UTC().AddDate(0, 0, -rd.retentionDays)
+	boundary := coldBoundary(rd.retentionDays)
 
 	// ---- downsample mode: bounded result, no cursor ----
 	if maxPoints > 0 {
@@ -709,4 +709,15 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// coldBoundary is where cold storage ends and hot begins: midnight UTC of the
+// day that just crossed the retention window. The archiver ships whole UTC
+// days, that one included, and hot keeps a day more than the window, so both
+// sides of a day-aligned line are complete — an unaligned line sent part of
+// the current day to cold before the archiver had shipped it. It is also the
+// same line on every page of a cursor walk, which is what lets ColdReader page
+// through one Athena query instead of re-running it per page.
+func coldBoundary(retentionDays int) time.Time {
+	return time.Now().UTC().AddDate(0, 0, -retentionDays).Truncate(24 * time.Hour)
 }

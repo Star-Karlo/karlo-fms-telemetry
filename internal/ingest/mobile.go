@@ -345,7 +345,7 @@ func (m *MobileStore) History(ctx context.Context, driver string, from, to, curs
 	if !cursor.IsZero() {
 		lower, strict = cursor, true
 	}
-	boundary := time.Now().UTC().AddDate(0, 0, -m.retentionDays)
+	boundary := coldBoundary(m.retentionDays)
 
 	if maxPoints > 0 {
 		var pts []MobilePosition
