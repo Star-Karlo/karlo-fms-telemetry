@@ -52,18 +52,20 @@ func main() {
 	}
 	log.Printf("archived %d rows for %s -> %s", n, day.Format("2006-01-02"), path)
 
-	// Upload to S3 Glacier Instant Retrieval (cheap cold storage, ms retrieval)
-	// when a bucket is configured. Otherwise the Parquet stays local.
+	// Upload to S3 Standard when a bucket is configured; otherwise the Parquet
+	// stays local. Standard, not Glacier Instant Retrieval: this archive is read
+	// every day through Athena, and GIR's $0.03/GB retrieval charge cost far
+	// more than the storage it saved (see internal/archive/s3.go).
 	bucket := os.Getenv("S3_BUCKET")
 	if bucket == "" {
 		log.Printf("S3_BUCKET not set — skipping upload (local file only)")
 		return
 	}
 	key := fmt.Sprintf("telemetry/date=%s/part.parquet", day.Format("2006-01-02"))
-	if err := archive.UploadFile(ctx, bucket, key, path, types.StorageClassGlacierIr); err != nil {
+	if err := archive.UploadFile(ctx, bucket, key, path, types.StorageClassStandard); err != nil {
 		log.Fatalf("s3 upload: %v", err)
 	}
-	log.Printf("uploaded -> s3://%s/%s  (GLACIER_IR)", bucket, key)
+	log.Printf("uploaded -> s3://%s/%s  (STANDARD)", bucket, key)
 
 	// Mobile (driver-keyed) telemetry: same day, same bucket, its own folder so
 	// it maps to a distinct Athena table. A failure here must not fail the
@@ -76,11 +78,11 @@ func main() {
 	log.Printf("archived %d mobile rows for %s -> %s", mn, day.Format("2006-01-02"), mPath)
 
 	mKey := fmt.Sprintf("mobile/date=%s/part.parquet", day.Format("2006-01-02"))
-	if err := archive.UploadFile(ctx, bucket, mKey, mPath, types.StorageClassGlacierIr); err != nil {
+	if err := archive.UploadFile(ctx, bucket, mKey, mPath, types.StorageClassStandard); err != nil {
 		log.Printf("WARN mobile s3 upload: %v", err)
 		return
 	}
-	log.Printf("uploaded -> s3://%s/%s  (GLACIER_IR)", bucket, mKey)
+	log.Printf("uploaded -> s3://%s/%s  (STANDARD)", bucket, mKey)
 
 	maintainPartitions(ctx, pool, retentionDays)
 }

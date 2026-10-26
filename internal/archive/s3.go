@@ -12,9 +12,12 @@ import (
 )
 
 // UploadFile puts a local file at s3://bucket/key with the given storage class.
-// For cold telemetry we use GLACIER_IR (Glacier Instant Retrieval): much cheaper
-// storage than Standard, still millisecond retrieval. Credentials/region come
-// from the standard AWS chain (AWS_PROFILE / env / instance role).
+// Cold telemetry goes to STANDARD. It used to go to GLACIER_IR, which stores for
+// a fifth of the price but charges $0.03 for every GB read — and every Athena
+// query reads the whole date range for every device, so a read-heavy archive
+// cost several times its storage in retrievals (October 2026: $244 in a month on
+// a 453 GB archive whose storage was $2). Credentials/region come from the
+// standard AWS chain (AWS_PROFILE / env / instance role).
 func UploadFile(ctx context.Context, bucket, key, path string, storageClass types.StorageClass) error {
 	return UploadFileAs(ctx, bucket, key, path, storageClass, "application/vnd.apache.parquet")
 }
