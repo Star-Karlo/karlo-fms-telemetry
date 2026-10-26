@@ -321,7 +321,7 @@ func (m *Migrator) put(ctx context.Context, key, path string) error {
 		Bucket:       &m.Dst,
 		Key:          &key,
 		Body:         f,
-		StorageClass: types.StorageClassStandard, // read through Athena; see internal/archive/s3.go
+		StorageClass: types.StorageClassIntelligentTiering, // read through Athena; see internal/archive/s3.go
 		ContentType:  aws.String("application/vnd.apache.parquet"),
 	})
 	return err

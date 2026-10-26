@@ -44,8 +44,9 @@ const (
 //
 // Every Athena query is billed for the whole partition it scans — the date
 // range, for every device, because the table is not partitioned by device —
-// and the archive sits in Glacier Instant Retrieval, which charges for every
-// byte read. A LIMIT does not shrink that. So a cursor-paged read must not
+// and Athena bills per byte scanned (the archive also sat in Glacier Instant
+// Retrieval until October 2026, which charged again for every byte read). A
+// LIMIT does not shrink that. So a cursor-paged read must not
 // start a query per page: one 10,000-row page of a week-long track costs the
 // same ~13 GB scan as the whole week. The first page runs the query for the
 // entire window; later pages are read from that query's stored result, which
