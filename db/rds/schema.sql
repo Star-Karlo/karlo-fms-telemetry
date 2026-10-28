@@ -466,3 +466,50 @@ CREATE INDEX IF NOT EXISTS route_cache_expires_idx ON route_cache (expires_at);
 CREATE INDEX IF NOT EXISTS route_cache_endpoint_idx ON route_cache (endpoint, last_used_at DESC);
 -- "drop every journey that names this warehouse", for when a location moves.
 CREATE INDEX IF NOT EXISTS route_cache_location_ids_idx ON route_cache USING gin (location_ids);
+
+-- toll_shadow — what Karlo's own pricer would have said, beside what MAPID said.
+--
+-- Karlo pays MAPID for toll fares it already holds the tariff tables for. The
+-- in-house pricer is not accurate enough to serve yet: measured against six
+-- hand-built lanes on 2026-10-28 it ran from 88% under to 66% over, and
+-- produced a complete answer on one lane in six. Six lanes is also too small
+-- a sample to fix it against, because each defect found so far showed up on
+-- some lanes and not others.
+--
+-- So every fare the platform serves is now priced twice: MAPID's answer is
+-- the one returned, ours is computed beside it, and both land here. A week of
+-- ordinary traffic gives a comparison per distinct journey rather than six,
+-- and it costs nothing — the MAPID call was happening anyway.
+--
+-- mapid_gates IS THE POINT OF THIS TABLE. MAPID returns the gates it charged
+-- at, each with a name, a Point and a price. That is the one fact the pricer
+-- cannot derive and the one every open defect needs: which booths are
+-- transactions rather than drive-by, where they actually sit, and what each
+-- costs at which class.
+--
+-- The key is route_cache's key for the same answer, so the two join directly.
+-- Rows are kept beyond the cache's 90 days on purpose: the cached answer is a
+-- fare with a shelf life, this is a measurement.
+CREATE TABLE IF NOT EXISTS toll_shadow (
+  key           bytea PRIMARY KEY,         -- route_cache.key for the same answer
+  profile       text        NOT NULL,
+  points        jsonb       NOT NULL,      -- [[lon,lat],…] as asked, in order
+  distance_m    double precision,          -- MAPID's own, for a sanity check on the geometry
+
+  mapid_rp      jsonb       NOT NULL,      -- {"1":49000,…} all five classes
+  mapid_gates   jsonb       NOT NULL,      -- MAPID's details[], verbatim
+
+  ours_rp       jsonb,                     -- same shape; NULL when ours refused
+  ours_gates    jsonb,                     -- our segments[], the charges we would have made
+  ours_unpriced jsonb,                     -- gates we passed and could not price
+  ours_complete boolean,                   -- ours_unpriced empty
+  ours_error    text,                      -- why ours produced nothing, when it did not
+
+  seen          bigint      NOT NULL DEFAULT 1,
+  observed_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- "which lanes do we get wrong, worst first" and "is completeness improving".
+CREATE INDEX IF NOT EXISTS toll_shadow_complete_idx ON toll_shadow (ours_complete, observed_at DESC);
+-- The gate-level questions: which names MAPID charges that we have no tariff for.
+CREATE INDEX IF NOT EXISTS toll_shadow_gates_idx ON toll_shadow USING gin (mapid_gates);
