@@ -22,6 +22,7 @@ type Service struct {
 	store  *Store
 	up     Upstream
 	router Upstream
+	shadow *Shadow
 }
 
 func NewService(store *Store, up Upstream) *Service { return &Service{store: store, up: up} }
@@ -30,6 +31,15 @@ func NewService(store *Store, up Upstream) *Service { return &Service{store: sto
 // unconfigured one, leaves every endpoint on up.
 func (s *Service) WithRouter(r Upstream) *Service {
 	s.router = r
+	return s
+}
+
+// WithShadow prices every toll answer a second time, against Karlo's own
+// tables, and records both. It never changes what is served — see Shadow.
+func (s *Service) WithShadow(sh *Shadow) *Service {
+	if sh.Configured() {
+		s.shadow = sh
+	}
 	return s
 }
 
@@ -98,7 +108,18 @@ func (s *Service) Get(ctx context.Context, r Request) (Answer, error) {
 	// back is a different engine's and must not land in the router's entry.
 	if errors.Is(err, ErrUnsupported) && up != s.up {
 		log.Printf("routecache: %s does not answer %s — using %s", up.Name(), n.Endpoint, s.up.Name())
-		return s.serve(ctx, n, s.up)
+		answer, err = s.serve(ctx, n, s.up)
+		up = s.up
+	}
+
+	// Price it again against our own tables and write both down. Deliberately
+	// on the answer being RETURNED, cached or fresh: the toll hit rate is
+	// around 92%, so shadowing only misses would yield a handful of
+	// comparisons a day instead of one per distinct journey. Compare returns
+	// before doing any work and cannot affect this answer.
+	if err == nil && n.Endpoint == "route_toll" && s.shadow != nil {
+		n.Provider = up.Fingerprint()
+		s.shadow.Compare(n, answer.Payload)
 	}
 	return answer, err
 }

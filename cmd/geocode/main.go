@@ -2,7 +2,7 @@
 //
 //	@title			Karlo FMS Geocode Service
 //	@version		0.1
-//	@description	Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll, /v1/route-ids — answers kept 90 days in Postgres so the same lane is never bought twice). Routing has two possible engines and every answer names the one that produced it in `source`: MAPID, which is metered, and Karlo's own self-hosted Valhalla, which is free per call but answers coordinate routing only — id-routed journeys and toll fares stay on MAPID. ROUTE_ENGINE picks it at deploy time; callers see the same endpoints and shapes either way.
+//	@description	Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll, /v1/route-ids — answers kept 90 days in Postgres so the same lane is never bought twice). Routing has two possible engines and every answer names the one that produced it in `source`: MAPID, which is metered, and Karlo's own self-hosted Valhalla, which is free per call but answers coordinate routing only — id-routed journeys and toll fares stay on MAPID. ROUTE_ENGINE picks it at deploy time; callers see the same endpoints and shapes either way. With TOLL_SHADOW_URL set, every toll fare is also priced against Karlo's own tariff tables and both answers are recorded in toll_shadow; MAPID's is still the one returned, so callers see no difference.
 //	@BasePath		/
 //
 //	@securityDefinitions.apikey	ServiceToken
@@ -88,6 +88,19 @@ func main() {
 			log.Printf("routing: ROUTE_ENGINE=valhalla but ROUTING_BASE_URL is empty — staying on MAPID")
 		}
 	}
+	// TOLL_SHADOW_URL prices every toll answer a second time against Karlo's
+	// own tariff tables and records both, without changing what is served.
+	// Empty — the default — leaves it off entirely.
+	//
+	// This is how the in-house pricer earns its way to being the primary: it
+	// is not accurate enough today, and six hand-built lanes are too few to
+	// fix it against. Shadowing turns every ordinary order into a measured
+	// comparison at no extra cost, because MAPID is called either way.
+	if u := env("TOLL_SHADOW_URL", ""); u != "" {
+		routeSvc = routeSvc.WithShadow(routecache.NewShadow(pool, u, os.Getenv("TOLL_SHADOW_TOKEN")))
+		log.Printf("routing: toll answers shadowed against %s — MAPID is still served", u)
+	}
+
 	go routeSvc.Sweep(ctx, time.Hour)
 
 	r := chi.NewRouter()
