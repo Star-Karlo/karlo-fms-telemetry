@@ -2,7 +2,7 @@
 //
 //	@title			Karlo FMS Geocode Service
 //	@version		0.1
-//	@description	Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll — MAPID's answers kept 90 days in Postgres so the same lane is never bought twice). They share a service because they share a database and a deploy, not because they are the same thing: geocode answers from our own data, routing caches an upstream provider's.
+//	@description	Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll, /v1/route-ids — answers kept 90 days in Postgres so the same lane is never bought twice). Routing has two possible engines and every answer names the one that produced it in `source`: MAPID, which is metered, and Karlo's own self-hosted Valhalla, which is free per call but answers coordinate routing only — id-routed journeys and toll fares stay on MAPID. ROUTE_ENGINE picks it at deploy time; callers see the same endpoints and shapes either way.
 //	@BasePath		/
 //
 //	@securityDefinitions.apikey	ServiceToken
@@ -67,6 +67,26 @@ func main() {
 	routeSvc := routecache.NewService(routecache.NewStore(pool, routeTTL), routeUp)
 	if !routeUp.Configured() {
 		log.Printf("routing: MAPID_API_KEY is not set — cached answers only, every miss will fail")
+	}
+
+	// ROUTE_ENGINE=valhalla moves plain coordinate routing onto Karlo's own
+	// engine. Everything else — id-routed journeys and toll — stays on MAPID,
+	// which is why this is one variable and not a migration: callers see the
+	// same endpoints, the same shapes and the same host, and `source` on each
+	// answer says who produced it.
+	//
+	// DEFAULT IS MAPID, deliberately. The switch is a deploy-time decision
+	// someone makes and can undo in one revision, not something that happens
+	// because a URL was filled in.
+	if strings.EqualFold(env("ROUTE_ENGINE", "mapid"), "valhalla") {
+		router := routecache.NewValhalla(env("ROUTING_BASE_URL", ""), os.Getenv("ROUTING_API_TOKEN"))
+		if router.Configured() {
+			routeSvc = routeSvc.WithRouter(router)
+			log.Printf("routing: coordinate routing on %s (%s); ids and toll stay on MAPID",
+				env("ROUTING_BASE_URL", ""), router.Fingerprint())
+		} else {
+			log.Printf("routing: ROUTE_ENGINE=valhalla but ROUTING_BASE_URL is empty — staying on MAPID")
+		}
 	}
 	go routeSvc.Sweep(ctx, time.Hour)
 

@@ -54,6 +54,13 @@ func NewMAPID(baseURL, key string) *MAPID {
 
 func (m *MAPID) Configured() bool { return m != nil && m.key != "" }
 
+func (m *MAPID) Name() string { return "mapid" }
+
+// Fingerprint has no data version in it, and cannot: MAPID's road data
+// changes when MAPID changes it, with nothing in the response that says so.
+// The 90-day TTL is the only expiry its answers get.
+func (m *MAPID) Fingerprint() string { return "mapid" }
+
 // Route asks for a path between the points.
 //
 // THE BARE ENDPOINT IS DELIBERATE — do not "upgrade" it to /v4/route.

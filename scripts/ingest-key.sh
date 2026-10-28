@@ -26,7 +26,30 @@ python3 - "$tmp" <<'PY'
 import json,sys
 td=json.load(open(sys.argv[1]+'/td.json')); c=td['containerDefinitions'][0]
 for k in ('taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy','deregisteredAt'): td.pop(k,None)
+
+# DATABASE_URL, pointed at the SAME parameter the running services use.
+#
+# WHY THIS IS HERE. ingestkey falls back to DST_DSN when DATABASE_URL is
+# unset, and DST_DSN is telemetry-rds-admin-url: the admin credential from
+# the September relocation, whose password no longer authenticates
+# (SQLSTATE 28P01, seen 2026-10-27). telemetry_app does authenticate, and
+# db/rds/schema.sql grants it SELECT/INSERT/UPDATE/DELETE on every table in
+# public, so it can list, create, rename and revoke.
+#
+# The dbtool family keeps SRC_DSN/DST_DSN/APP_DSN untouched: those belong to
+# telmigrate, and this entrypoint is a visitor. The added secret goes into
+# the /ingestkey revision only, which is why it is removed again before the
+# restore revision is written.
+base = next((x['valueFrom'] for x in c.get('secrets') or [] if x['name']=='DST_DSN'), None)
+added = False
+if base and not any(x['name']=='DATABASE_URL' for x in c.get('secrets') or []):
+    app = base.rsplit('/',1)[0] + '/telemetry-database-url'
+    c.setdefault('secrets',[]).append({'name':'DATABASE_URL','valueFrom':app})
+    added = True
+
 c['entryPoint']=['/ingestkey']; c['command']=['list']; json.dump(td,open(sys.argv[1]+'/key.json','w'))
+if added:
+    c['secrets']=[x for x in c['secrets'] if x['name']!='DATABASE_URL']
 c['entryPoint']=['/telmigrate']; c['command']=['verify']; json.dump(td,open(sys.argv[1]+'/back.json','w'))
 PY
 rev=$(aws ecs register-task-definition --cli-input-json "file://$tmp/key.json" --query 'taskDefinition.revision' --output text)

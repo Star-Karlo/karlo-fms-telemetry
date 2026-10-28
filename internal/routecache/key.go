@@ -1,5 +1,5 @@
-// Package routecache stores MAPID's paid answers, keyed by the content of
-// the request that produced them.
+// Package routecache stores routing answers, keyed by the content of the
+// request that produced them AND by the engine that produced it.
 package routecache
 
 import (
@@ -41,6 +41,17 @@ type Request struct {
 	Endpoint string // route | route_toll | route_ids
 	Profile  string // truck (default) | car | motorcycle | foot
 	Points   []Point
+
+	// Provider is the upstream's Fingerprint, set by Service once it has
+	// chosen one — never by the caller, who does not get a say in which
+	// engine answers.
+	//
+	// It is in the key because two engines give DIFFERENT ANSWERS to the
+	// same question: 155,751 m from MAPID and 155,909 m from Valhalla on
+	// one measured Jakarta-Bandung lane. Sharing an entry between them
+	// would serve whichever happened to ask first, for ninety days, with
+	// `source` naming the one that did not.
+	Provider string
 	// LocationIDs is the other way to name a journey: Karlo's own location
 	// ids as registered with MAPID, which its /v4/route takes instead of
 	// coordinates (origin first, destination second). They key BETTER than
@@ -83,6 +94,7 @@ func (r Request) Normalise() Request {
 			out.LocationIDs = append(out.LocationIDs, id)
 		}
 	}
+	out.Provider = strings.ToLower(strings.TrimSpace(r.Provider))
 	out.Instructions, out.Elevation = r.Instructions, r.Elevation
 	if r.Alternatives > 1 {
 		out.Alternatives = r.Alternatives
@@ -104,13 +116,15 @@ func round(f float64) float64 {
 	return math.Round(f*p) / p
 }
 
-// Key is the cache key: sha256 over the version, endpoint, profile and the
-// ORDERED points. Order is identity — A→B, B→A and A→C→B are three
+// Key is the cache key: sha256 over the version, provider, endpoint, profile
+// and the ORDERED points. Order is identity — A→B, B→A and A→C→B are three
 // different journeys and three different entries.
 func (r Request) Key() []byte {
 	n := r.Normalise()
 	var b strings.Builder
 	b.WriteString(keyVersion)
+	b.WriteByte('|')
+	b.WriteString(n.Provider)
 	b.WriteByte('|')
 	b.WriteString(n.Endpoint)
 	b.WriteByte('|')
