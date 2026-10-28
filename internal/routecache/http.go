@@ -99,7 +99,7 @@ type RouteRequest struct {
 // route godoc
 //
 //	@Summary		Route between points (cached)
-//	@Description	The routing answer from MAPID for these points, served from the shared cache when it has been asked before and bought upstream when it has not. Options (instructions, elevation, alternatives, snap_preventions) are part of the identity of a request: the same journey asked with different options is a different cached answer, so ask for what you will read and no more. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.
+//	@Description	The routing answer for these points, served from the shared cache when it has been asked before and fetched upstream when it has not. `source` names the engine that produced it — `mapid` (metered) or `valhalla` (Karlo's own, free per call); a deployment chooses one and the request shape does not change. Options (instructions, elevation, alternatives, snap_preventions) are part of the identity of a request: the same journey asked with different options is a different cached answer, so ask for what you will read and no more. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under `payload`, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.
 //	@Tags			routing
 //	@Accept			json
 //	@Produce		json

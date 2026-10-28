@@ -121,7 +121,7 @@ const docTemplate = `{
                         "ServiceToken": []
                     }
                 ],
-                "description": "The routing answer from MAPID for these points, served from the shared cache when it has been asked before and bought upstream when it has not. Options (instructions, elevation, alternatives, snap_preventions) are part of the identity of a request: the same journey asked with different options is a different cached answer, so ask for what you will read and no more. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under ` + "`" + `payload` + "`" + `, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.",
+                "description": "The routing answer for these points, served from the shared cache when it has been asked before and fetched upstream when it has not. ` + "`" + `source` + "`" + ` names the engine that produced it — ` + "`" + `mapid` + "`" + ` (metered) or ` + "`" + `valhalla` + "`" + ` (Karlo's own, free per call); a deployment chooses one and the request shape does not change. Options (instructions, elevation, alternatives, snap_preventions) are part of the identity of a request: the same journey asked with different options is a different cached answer, so ask for what you will read and no more. For a journey whose FARE you also need, call /v1/route-toll instead — its answer already contains the route. The response carries the MAPID payload untouched under ` + "`" + `payload` + "`" + `, plus whether it was cached. Points are [lon, lat] in travel order; order is part of the identity, so A→B and B→A are different journeys.",
                 "consumes": [
                     "application/json"
                 ],
@@ -779,7 +779,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Karlo FMS Geocode Service",
-	Description:      "Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll — MAPID's answers kept 90 days in Postgres so the same lane is never bought twice). They share a service because they share a database and a deploy, not because they are the same thing: geocode answers from our own data, routing caches an upstream provider's.",
+	Description:      "Two jobs behind one process: geocoding (lat/lon -> kecamatan / kota / provinsi, PostGIS + Redis geohash cache; /search for forward lookups) and the platform's routing cache (/v1/route, /v1/route-toll, /v1/route-ids — answers kept 90 days in Postgres so the same lane is never bought twice). Routing has two possible engines and every answer names the one that produced it in `source`: MAPID, which is metered, and Karlo's own self-hosted Valhalla, which is free per call but answers coordinate routing only — id-routed journeys and toll fares stay on MAPID. ROUTE_ENGINE picks it at deploy time; callers see the same endpoints and shapes either way.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
