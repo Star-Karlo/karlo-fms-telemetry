@@ -75,20 +75,34 @@ func (h *Handler) Authorized(ctx context.Context, presented string) bool {
 }
 
 func (h *Handler) authorized(ctx context.Context, presented string) bool {
+	_, ok := h.identify(ctx, presented)
+	return ok
+}
+
+// SharedKeyName labels a batch that authenticated with the legacy shared
+// secret rather than a named ingest_key row. Every sender on the shared key
+// looks alike, which is the reason to move senders onto their own keys.
+const SharedKeyName = "shared-env"
+
+// identify authorises the request AND says which sender it was, so the two can
+// never answer differently. The name is "" when the endpoint is open (no key
+// configured at all, the local/dev case) — nothing to attribute, and the
+// reading is stored without an ingest_key rather than with a made-up one.
+func (h *Handler) identify(ctx context.Context, presented string) (string, bool) {
 	if h.apiKey == "" && h.keys == nil {
-		return true
+		return "", true
 	}
 	if presented == "" {
-		return false
+		return "", false
 	}
 	// Constant-time: the shared secret is compared byte-for-byte on every call.
 	if h.apiKey != "" && subtle.ConstantTimeCompare([]byte(presented), []byte(h.apiKey)) == 1 {
-		return true
+		return SharedKeyName, true
 	}
 	if h.keys != nil {
-		return h.keys.Valid(ctx, presented)
+		return h.keys.Identify(ctx, presented)
 	}
-	return false
+	return "", false
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -152,7 +166,7 @@ type IngestResult struct {
 // handleIngest godoc
 //
 //	@Summary		Ingest device telemetry (single reading or batch array)
-//	@Description	Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted "-> metadata" (stored in the metadata jsonb).
+//	@Description	Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted "-> metadata" (stored in the metadata jsonb). The name of the X-Ingest-Key that presented the batch is recorded as `metadata.ingest_key`, so each stored reading says which sender supplied it.
 //	@Tags			ingest
 //	@Accept			json
 //	@Produce		json
@@ -163,8 +177,11 @@ type IngestResult struct {
 //	@Security	IngestKey
 //	@Router			/v1/ingest [post]
 func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
-	// API-key gate: accepts the shared secret or any active ingest_key.
-	if !h.authorized(r.Context(), r.Header.Get("X-Ingest-Key")) {
+	// API-key gate: accepts the shared secret or any active ingest_key. The
+	// sender's name comes back from the same check and is stamped on every
+	// reading below.
+	sender, ok := h.identify(r.Context(), r.Header.Get("X-Ingest-Key"))
+	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or missing X-Ingest-Key"})
 		return
 	}
@@ -180,6 +197,7 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	stampSender(readings, sender)
 
 	ctx := r.Context()
 	stored, err := WriteReadings(ctx, h.geo, h.w, readings)
@@ -195,6 +213,29 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusAccepted, map[string]any{"stored": stored})
+}
+
+// stampSender records which ingest key presented a batch, as metadata.ingest_key.
+//
+// metadata.source cannot answer this: every pushed vendor arrives through the
+// one generic adapter and is labelled "generic", because our upstream already
+// normalises them to a single shape. The key, by contrast, is per sender — so
+// this is what lets a later question ("is this our own tracker or a vendor's
+// feed?") be answered from the stored row instead of guessed from an IMEI
+// prefix. Historical rows have no stamp and never will; this only fixes the
+// record from here on.
+//
+// An empty sender (the endpoint running with no key configured) stamps nothing.
+func stampSender(readings []Reading, sender string) {
+	if sender == "" {
+		return
+	}
+	for i := range readings {
+		if readings[i].Metadata == nil {
+			readings[i].Metadata = map[string]any{}
+		}
+		readings[i].Metadata["ingest_key"] = sender
+	}
 }
 
 // WriteReadings reverse-geocodes each reading (best-effort, cached) and persists

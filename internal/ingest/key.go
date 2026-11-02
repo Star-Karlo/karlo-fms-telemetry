@@ -33,6 +33,7 @@ type KeyStore struct {
 
 type cachedKey struct {
 	valid   bool
+	name    string // the key's label, cached alongside the verdict
 	expires time.Time
 }
 
@@ -43,8 +44,17 @@ func NewKeyStore(pool *pgxpool.Pool) *KeyStore {
 // Valid reports whether presented is an active (existing, unrevoked) ingest key.
 // Failures to reach the DB deny the request rather than opening the endpoint.
 func (k *KeyStore) Valid(ctx context.Context, presented string) bool {
+	_, ok := k.Identify(ctx, presented)
+	return ok
+}
+
+// Identify is Valid plus the key's name, which the ingest handler stamps on
+// every reading so a stored row says which sender supplied it. The name is
+// returned from the same cache entry as the verdict, so attribution costs a
+// map read, not a second query.
+func (k *KeyStore) Identify(ctx context.Context, presented string) (string, bool) {
 	if presented == "" {
-		return false
+		return "", false
 	}
 	sum := sha256.Sum256([]byte(presented))
 
@@ -52,26 +62,30 @@ func (k *KeyStore) Valid(ctx context.Context, presented string) bool {
 	c, ok := k.cache[sum]
 	k.mu.RUnlock()
 	if ok && time.Now().Before(c.expires) {
-		return c.valid
+		return c.name, c.valid
 	}
 
 	// Negative results are cached too, so a misconfigured sender retrying in a
 	// loop cannot turn into a query storm.
 	var id int64
+	var name string
 	err := k.pool.QueryRow(ctx,
-		`SELECT id FROM ingest_key WHERE key_hash = $1 AND revoked_at IS NULL`,
+		`SELECT id, name FROM ingest_key WHERE key_hash = $1 AND revoked_at IS NULL`,
 		sum[:],
-	).Scan(&id)
+	).Scan(&id, &name)
 	valid := err == nil
+	if !valid {
+		name = ""
+	}
 
 	k.mu.Lock()
-	k.cache[sum] = cachedKey{valid: valid, expires: time.Now().Add(keyCacheTTL)}
+	k.cache[sum] = cachedKey{valid: valid, name: name, expires: time.Now().Add(keyCacheTTL)}
 	k.mu.Unlock()
 
 	if valid {
 		k.touch(id)
 	}
-	return valid
+	return name, valid
 }
 
 // touch records last_used_at without blocking the request. Best-effort: a lost
