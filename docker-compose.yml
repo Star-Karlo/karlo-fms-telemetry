@@ -6,11 +6,11 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: fms
     ports:
-      - "5432:5432"
+      - '5436:5432'
     volumes:
       - dbdata:/home/postgres/pgdata/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d fms"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d fms']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -18,10 +18,23 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - '6379:6379'
+    command: ['redis-server', '--appendonly', 'yes']
     volumes:
       - redisdata:/data
+
+  # Local S3 for dashcam clips, with the bucket created on startup. Point both
+  # telemetry and fms-backend at it with
+  # AWS_ENDPOINT_URL_S3=http://s3.localhost.localstack.cloud:4566 (that name
+  # resolves to 127.0.0.1, so presigned links play in the browser).
+  s3:
+    image: localstack/localstack:3.8.1
+    environment:
+      SERVICES: s3
+    ports:
+      - '4566:4566'
+    volumes:
+      - ./scripts/localstack:/etc/localstack/init/ready.d:ro
 
   # Reverse-geocode service. Opt-in: `make up-app` (profile "app"); plain
   # `make up` starts only the infra above (db + redis) for local `go run`.
@@ -33,15 +46,15 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/fms
       REDIS_ADDR: redis:6379
-      GEOCODE_ADDR: ":8081"
+      GEOCODE_ADDR: ':8081'
     ports:
-      - "8081:8081"
+      - '8081:8081'
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
-    profiles: ["app"]
+    profiles: ['app']
 
 volumes:
   dbdata:

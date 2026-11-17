@@ -42,25 +42,42 @@ type AuthFunc func(r *http.Request) bool
 
 // Handler serves the dashcam endpoints.
 type Handler struct {
-	vss    *vss.Client
-	auth   AuthFunc
-	bucket string
-	jobs   *jobStore
-	client *http.Client
-	pool   *pgxpool.Pool
-	tracks *trackCache
+	vss     *vss.Client
+	auth    AuthFunc
+	bucket  string
+	buckets map[string]bool
+	jobs    *jobStore
+	client  *http.Client
+	pool    *pgxpool.Pool
+	tracks  *trackCache
+
+	// Seams so tests can run the download path without AWS or a database.
+	upload     func(ctx context.Context, bucket, key, path string) error
+	alarmFiles func(ctx context.Context, alarmID string) (deviceID string, files []vss.EvidenceFile, err error)
 }
 
-// NewHandler builds the handler. bucket is where downloaded clips are kept
-// (karlo-fms-cold-storage); videos land under the "video/" prefix, beside the
-// telemetry parquet.
-func NewHandler(client *vss.Client, auth AuthFunc, bucket string, pool *pgxpool.Pool) *Handler {
-	return &Handler{
+// NewHandler builds the handler. bucket is the default home of downloaded
+// clips (karlo-fms-cold-storage); videos land under the "video/" prefix, beside
+// the telemetry parquet. extraBuckets are the other buckets a caller may name
+// per download (a customer's dedicated bucket).
+func NewHandler(client *vss.Client, auth AuthFunc, bucket string, extraBuckets []string, pool *pgxpool.Pool) *Handler {
+	h := &Handler{
 		vss: client, auth: auth, bucket: bucket, pool: pool,
-		jobs:   newJobStore(),
-		client: &http.Client{Timeout: 10 * time.Minute}, // clip pulls are large + slow
-		tracks: newTrackCache(client),
+		buckets: map[string]bool{bucket: true},
+		jobs:    newJobStore(),
+		client:  &http.Client{Timeout: 10 * time.Minute}, // clip pulls are large + slow
+		tracks:  newTrackCache(client),
 	}
+	for _, b := range extraBuckets {
+		if b = strings.TrimSpace(b); b != "" {
+			h.buckets[b] = true
+		}
+	}
+	h.upload = func(ctx context.Context, bucket, key, path string) error {
+		return archive.UploadFileAs(ctx, bucket, key, path, types.StorageClassStandard, "video/mp4")
+	}
+	h.alarmFiles = h.storedAlarmFiles
+	return h
 }
 
 // Routes mounts the dashcam endpoints.
@@ -236,12 +253,17 @@ type DownloadRequest struct {
 	Path    string `json:"path"`  // the clip's device path, from a prior /videos call
 	Start   string `json:"start"` // "2006-01-02 15:04:05"
 	Stop    string `json:"stop"`
+	// AlarmID saves exactly that event's uploaded clip for Channel, and never
+	// falls back to the SD card. Empty = the time-window save (manual path).
+	AlarmID string `json:"alarm_id,omitempty"`
+	// Bucket must be the default bucket or one of VIDEO_S3_BUCKETS; empty = default.
+	Bucket string `json:"bucket,omitempty"`
 }
 
 // startDownload godoc
 //
 //	@Summary		Pull a clip to S3 (async)
-//	@Description	Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/. Returns a job id to poll; the finished job carries the S3 key FMS records.
+//	@Description	Starts a VSS download, fetches the file, and stores it under {bucket}/video/. With alarm_id it copies only that event's uploaded clip and never pulls from the SD card. Returns a job id to poll; the finished job carries the bucket, S3 key and size FMS records.
 //	@Tags			dashcams
 //	@Accept			json
 //	@Produce		json
@@ -269,11 +291,119 @@ func (h *Handler) startDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := h.jobs.create()
+	if req.Bucket == "" {
+		req.Bucket = h.bucket
+	}
+	if !h.buckets[req.Bucket] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bucket is not allowed"})
+		return
+	}
+
+	job := h.jobs.create(req.Bucket)
 	// Detached from the request: the pull can take minutes, longer than any
 	// client will hold a connection. FMS polls the job instead.
-	go h.runDownload(context.Background(), job, deviceID, req, from, to)
+	if req.AlarmID != "" {
+		go h.runAlarmDownload(context.Background(), job, deviceID, req, from)
+	} else {
+		go h.runDownload(context.Background(), job, deviceID, req, from, to)
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.ID})
+}
+
+// runAlarmDownload copies one event's already-uploaded clip for one channel.
+// It never calls StartDownload: an automatic save must not pull from the SD
+// card over the truck's 4G (the operator does that by hand).
+func (h *Handler) runAlarmDownload(ctx context.Context, job *job, deviceID string, req DownloadRequest, at time.Time) {
+	h.jobs.set(job.ID, "uploading", "", "")
+	key := alarmVideoKey(deviceID, req.Channel, at, req.AlarmID)
+
+	owner, files, err := h.alarmFiles(ctx, req.AlarmID)
+	if err == nil && owner != deviceID {
+		h.jobs.set(job.ID, "failed", "", "the event belongs to another camera")
+		return
+	}
+	if url, ok := channelVideoURL(files, req.Channel); err == nil && ok {
+		size, perr := h.pullToS3(ctx, req.Bucket, url, key)
+		if perr == nil {
+			h.jobs.finish(job.ID, key, size)
+			return
+		}
+		log.Printf("dashcam: stored clip link for event %s failed: %v (searching again)", req.AlarmID, perr)
+	}
+
+	// The stored link may have expired or the clip uploaded after the event was
+	// stored: ask VSS once, matching on the event id, never on time alone.
+	url, ok := h.searchedVideoURL(ctx, deviceID, req.AlarmID, req.Channel, at)
+	if !ok {
+		h.jobs.set(job.ID, "failed", "", "no clip on server")
+		return
+	}
+	size, err := h.pullToS3(ctx, req.Bucket, url, key)
+	if err != nil {
+		h.jobs.set(job.ID, "failed", "", err.Error())
+		return
+	}
+	h.jobs.finish(job.ID, key, size)
+}
+
+// storedAlarmFiles reads an event's evidence files from dashcam_alarms.
+func (h *Handler) storedAlarmFiles(ctx context.Context, alarmID string) (string, []vss.EvidenceFile, error) {
+	if h.pool == nil {
+		return "", nil, errors.New("no database")
+	}
+	var deviceID string
+	var raw []byte
+	err := h.pool.QueryRow(ctx,
+		`SELECT device_id, raw FROM dashcam_alarms WHERE alarm_id = $1`, alarmID).Scan(&deviceID, &raw)
+	if err != nil {
+		return "", nil, err
+	}
+	var stored struct {
+		Files []vss.EvidenceFile `json:"files"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return "", nil, err
+	}
+	return deviceID, stored.Files, nil
+}
+
+// searchedVideoURL searches VSS around the event time for that exact event and
+// returns its video link for the channel.
+func (h *Handler) searchedVideoURL(ctx context.Context, deviceID, alarmID string, channel int, at time.Time) (string, bool) {
+	evs, err := h.vss.SearchAlarmEvidence(ctx, deviceID, at.Add(-5*time.Minute), at.Add(5*time.Minute), "")
+	if err != nil {
+		log.Printf("dashcam: evidence search for event %s: %v", alarmID, err)
+		return "", false
+	}
+	for _, e := range evs {
+		if e.AlarmGuid == alarmID {
+			return channelVideoURL(e.Files, channel)
+		}
+	}
+	return "", false
+}
+
+// channelVideoURL picks the video file for exactly this channel. No fallback to
+// another channel: that is how the time-window search saved the wrong clip.
+func channelVideoURL(files []vss.EvidenceFile, channel int) (string, bool) {
+	for _, f := range files {
+		if isVideo(f) && fileChannel(f) == channel {
+			return f.DownURL, true
+		}
+	}
+	return "", false
+}
+
+func isVideo(f vss.EvidenceFile) bool {
+	return (f.FileType == 1 || f.FileType == 2) && f.DownURL != ""
+}
+
+// fileChannel treats VSS's "unspecified" channel 0 as channel 1, as evidence() does.
+func fileChannel(f vss.EvidenceFile) int {
+	if f.Channel == 0 {
+		return 1
+	}
+	return f.Channel
 }
 
 func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, req DownloadRequest, from, to time.Time) {
@@ -287,10 +417,10 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 	if url, ok := h.evidenceClipURL(ctx, deviceID, from, to, req.Channel); ok {
 		h.jobs.set(job.ID, "uploading", "", "")
 		key := videoKey(deviceID, req.Channel, from)
-		if err := h.pullToS3(ctx, url, key); err != nil {
+		if size, err := h.pullToS3(ctx, req.Bucket, url, key); err != nil {
 			log.Printf("dashcam: evidence clip fetch for %s: %v (falling back to SD card)", deviceID, err)
 		} else {
-			h.jobs.set(job.ID, "done", key, "")
+			h.jobs.finish(job.ID, key, size)
 			return
 		}
 	}
@@ -358,11 +488,12 @@ func (h *Handler) runDownload(ctx context.Context, job *job, deviceID string, re
 		h.jobs.set(job.ID, "failed", "", err.Error())
 		return
 	}
-	if err := h.pullToS3(ctx, fetchURL, key); err != nil {
+	size, err := h.pullToS3(ctx, req.Bucket, fetchURL, key)
+	if err != nil {
 		h.jobs.set(job.ID, "failed", "", err.Error())
 		return
 	}
-	h.jobs.set(job.ID, "done", key, "")
+	h.jobs.finish(job.ID, key, size)
 }
 
 // EvidenceClip is one alarm that has a ready evidence clip — the source for the
@@ -374,6 +505,9 @@ type EvidenceClip struct {
 	Lat     *float64  `json:"lat"`
 	Lon     *float64  `json:"lon"`
 	Channel int       `json:"channel"`
+	// AlarmID is the event's id: an auto-saved clip is matched to its event by
+	// it, since one camera can fire several events in the same second.
+	AlarmID string `json:"alarm_id,omitempty"`
 }
 
 // evidence godoc
@@ -420,7 +554,7 @@ func (h *Handler) evidence(w http.ResponseWriter, r *http.Request) {
 		if perr != nil {
 			continue
 		}
-		out = append(out, EvidenceClip{Code: e.AlarmType, Time: t, Lat: e.Lat, Lon: e.Lon, Channel: ch})
+		out = append(out, EvidenceClip{Code: e.AlarmType, Time: t, Lat: e.Lat, Lon: e.Lon, Channel: ch, AlarmID: e.AlarmGuid})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -504,26 +638,27 @@ func (h *Handler) evidenceClipURL(ctx context.Context, deviceID string, from, to
 // pullToS3 streams the VSS file to a temp file and uploads it. Video kept as
 // S3 Standard, not Glacier: accident evidence is retrieved interactively and
 // must be instantly available, unlike the archival parquet.
-func (h *Handler) pullToS3(ctx context.Context, fileURL, key string) error {
+func (h *Handler) pullToS3(ctx context.Context, bucket, fileURL, key string) (int64, error) {
 	// VSS reports the task "done" a beat before the extracted clip is actually
 	// readable on its file server, so a 404/5xx right after completion is usually
 	// "not written yet" — retry a few times before giving up.
 	resp, err := h.fetchClip(ctx, fileURL)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	tmp, err := os.CreateTemp("", "dashcam-*.mp4")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+	size, err := io.Copy(tmp, resp.Body)
+	if err != nil {
 		tmp.Close()
-		return fmt.Errorf("buffer clip: %w", err)
+		return 0, fmt.Errorf("buffer clip: %w", err)
 	}
 	tmp.Close()
-	return archive.UploadFileAs(ctx, h.bucket, key, tmp.Name(), types.StorageClassStandard, "video/mp4")
+	return size, h.upload(ctx, bucket, key, tmp.Name())
 }
 
 // fetchClip GETs the finished clip, retrying while the VSS file server reports it
@@ -579,10 +714,11 @@ func (h *Handler) downloadStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "job not found"})
 		return
 	}
-	resp := map[string]string{"status": j.Status}
+	resp := map[string]any{"status": j.Status}
 	if j.S3Key != "" {
 		resp["s3_key"] = j.S3Key
-		resp["bucket"] = h.bucket
+		resp["bucket"] = j.Bucket
+		resp["size_bytes"] = j.SizeBytes
 	}
 	if j.Err != "" {
 		resp["error"] = j.Err
@@ -595,6 +731,13 @@ func (h *Handler) downloadStatus(w http.ResponseWriter, r *http.Request) {
 func videoKey(deviceID string, channel int, at time.Time) string {
 	return fmt.Sprintf("video/%s/%s/ch%d_%s.mp4",
 		deviceID, at.Format("2006-01-02"), channel, at.Format("150405"))
+}
+
+// alarmVideoKey adds the event id: one camera can fire many events in the same
+// second (21 seen in production), and each is its own clip.
+func alarmVideoKey(deviceID string, channel int, at time.Time, alarmID string) string {
+	return fmt.Sprintf("video/%s/%s/ch%d_%s_%s.mp4",
+		deviceID, at.Format("2006-01-02"), channel, at.Format("150405"), alarmID)
 }
 
 func parseChannels(q string) []int {

@@ -8,6 +8,13 @@ definitions:
         type: integer
       device_id:
         type: string
+      files:
+        description: |-
+          Files are the event's video clips on the camera server, one per file and
+          channel, without their download links. Empty when the event has no video.
+        items:
+          $ref: '#/definitions/dashcam.AlarmFile'
+        type: array
       gforce:
         description: |-
           Gforce is the reported acceleration magnitude for a driving-behaviour
@@ -26,6 +33,17 @@ definitions:
         type: object
       speed:
         type: number
+    type: object
+  dashcam.AlarmFile:
+    properties:
+      channel:
+        type: integer
+      file_type:
+        type: integer
+      start:
+        type: string
+      stop:
+        type: string
     type: object
   dashcam.Clip:
     properties:
@@ -48,6 +66,15 @@ definitions:
     type: object
   dashcam.DownloadRequest:
     properties:
+      alarm_id:
+        description: |-
+          AlarmID saves exactly that event's uploaded clip for Channel, and never
+          falls back to the SD card. Empty = the time-window save (manual path).
+        type: string
+      bucket:
+        description: Bucket must be the default bucket or one of VIDEO_S3_BUCKETS;
+          empty = default.
+        type: string
       channel:
         type: integer
       path:
@@ -61,6 +88,11 @@ definitions:
     type: object
   dashcam.EvidenceClip:
     properties:
+      alarm_id:
+        description: |-
+          AlarmID is the event's id: an auto-saved clip is matched to its event by
+          it, since one camera can fire several events in the same second.
+        type: string
       channel:
         type: integer
       code:
@@ -466,8 +498,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/.
-        Returns a job id to poll; the finished job carries the S3 key FMS records.
+      description: Starts a VSS download, fetches the file, and stores it under {bucket}/video/.
+        With alarm_id it copies only that event's uploaded clip and never pulls from
+        the SD card. Returns a job id to poll; the finished job carries the bucket,
+        S3 key and size FMS records.
       parameters:
       - description: VSS device id
         in: path
@@ -636,7 +670,8 @@ paths:
     get:
       description: Events received over the VSS WebSocket, id-ascending. Poll with
         since=<last id you saw>. Tenant-agnostic; FMS maps device_id to a vehicle
-        and raises its own alert.
+        and raises its own alert. device_id, from and to narrow it to one camera's
+        events in a time window.
       parameters:
       - description: return alarms with id greater than this (default 0)
         in: query
@@ -646,6 +681,18 @@ paths:
         in: query
         name: limit
         type: integer
+      - description: only this camera's events
+        in: query
+        name: device_id
+        type: string
+      - description: events at or after this time (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: events before this time (RFC3339)
+        in: query
+        name: to
+        type: string
       produces:
       - application/json
       responses:
@@ -655,6 +702,12 @@ paths:
             items:
               $ref: '#/definitions/dashcam.AlarmDTO'
             type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - IngestKey: []
       - ServiceToken: []
@@ -871,7 +924,9 @@ paths:
       description: Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi,
         and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading
         object or a JSON array of them. Fields map to telemetry columns except those
-        noted "-> metadata" (stored in the metadata jsonb).
+        noted "-> metadata" (stored in the metadata jsonb). The name of the X-Ingest-Key
+        that presented the batch is recorded as `metadata.ingest_key`, so each stored
+        reading says which sender supplied it.
       parameters:
       - description: A reading (or a JSON array of readings)
         in: body

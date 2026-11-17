@@ -48,7 +48,7 @@ func newHandler(t *testing.T, baseURL string) *Handler {
 	t.Helper()
 	client := vss.New(vss.Config{BaseURL: baseURL, Username: "u", Password: "p"})
 	// Auth always passes in tests; the gate itself is the ingest package's job.
-	return NewHandler(client, func(*http.Request) bool { return true }, "test-bucket", nil)
+	return NewHandler(client, func(*http.Request) bool { return true }, "test-bucket", nil, nil)
 }
 
 func do(t *testing.T, h *Handler, method, target string) *httptest.ResponseRecorder {
@@ -110,7 +110,7 @@ func TestUnconfiguredVSSReturns503(t *testing.T) {
 func TestAuthGateRejectsMissingKey(t *testing.T) {
 	srv := fakeVSS(t)
 	client := vss.New(vss.Config{BaseURL: srv.URL, Username: "u", Password: "p"})
-	h := NewHandler(client, func(*http.Request) bool { return false }, "b", nil)
+	h := NewHandler(client, func(*http.Request) bool { return false }, "b", nil, nil)
 	r := chi.NewRouter()
 	h.Routes(r)
 	req := httptest.NewRequest(http.MethodGet, "/v1/dashcams", nil) // no key

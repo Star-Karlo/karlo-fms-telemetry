@@ -121,7 +121,7 @@ const docTemplate = `{
                         "ServiceToken": []
                     }
                 ],
-                "description": "Events received over the VSS WebSocket, id-ascending. Poll with since=\u003clast id you saw\u003e. Tenant-agnostic; FMS maps device_id to a vehicle and raises its own alert.",
+                "description": "Events received over the VSS WebSocket, id-ascending. Poll with since=\u003clast id you saw\u003e. Tenant-agnostic; FMS maps device_id to a vehicle and raises its own alert. device_id, from and to narrow it to one camera's events in a time window.",
                 "produces": [
                     "application/json"
                 ],
@@ -141,6 +141,24 @@ const docTemplate = `{
                         "description": "max rows (default 200)",
                         "name": "limit",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only this camera's events",
+                        "name": "device_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "events at or after this time (RFC3339)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "events before this time (RFC3339)",
+                        "name": "to",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -150,6 +168,15 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/dashcam.AlarmDTO"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
@@ -214,7 +241,7 @@ const docTemplate = `{
                         "ServiceToken": []
                     }
                 ],
-                "description": "Starts a VSS download, fetches the file, and stores it under karlo-fms-cold-storage/video/. Returns a job id to poll; the finished job carries the S3 key FMS records.",
+                "description": "Starts a VSS download, fetches the file, and stores it under {bucket}/video/. With alarm_id it copies only that event's uploaded clip and never pulls from the SD card. Returns a job id to poll; the finished job carries the bucket, S3 key and size FMS records.",
                 "consumes": [
                     "application/json"
                 ],
@@ -735,7 +762,7 @@ const docTemplate = `{
                         "IngestKey": []
                     }
                 ],
-                "description": "Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted \"-\u003e metadata\" (stored in the metadata jsonb).",
+                "description": "Accepts all readings, reverse-geocodes each to kecamatan/kota/provinsi, and stores them to the telemetry hypertable keyed by IMEI. Send one GenericReading object or a JSON array of them. Fields map to telemetry columns except those noted \"-\u003e metadata\" (stored in the metadata jsonb). The name of the X-Ingest-Key that presented the batch is recorded as ` + "`" + `metadata.ingest_key` + "`" + `, so each stored reading says which sender supplied it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1183,6 +1210,13 @@ const docTemplate = `{
                 "device_id": {
                     "type": "string"
                 },
+                "files": {
+                    "description": "Files are the event's video clips on the camera server, one per file and\nchannel, without their download links. Empty when the event has no video.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dashcam.AlarmFile"
+                    }
+                },
                 "gforce": {
                     "description": "Gforce is the reported acceleration magnitude for a driving-behaviour\nevent, or null. Raw is the original VSS payload, exposed so FMS can\nconfirm and back-fill the exact G field once a real event is seen.",
                     "type": "number"
@@ -1204,6 +1238,23 @@ const docTemplate = `{
                 },
                 "speed": {
                     "type": "number"
+                }
+            }
+        },
+        "dashcam.AlarmFile": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "integer"
+                },
+                "file_type": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "stop": {
+                    "type": "string"
                 }
             }
         },
@@ -1239,6 +1290,14 @@ const docTemplate = `{
         "dashcam.DownloadRequest": {
             "type": "object",
             "properties": {
+                "alarm_id": {
+                    "description": "AlarmID saves exactly that event's uploaded clip for Channel, and never\nfalls back to the SD card. Empty = the time-window save (manual path).",
+                    "type": "string"
+                },
+                "bucket": {
+                    "description": "Bucket must be the default bucket or one of VIDEO_S3_BUCKETS; empty = default.",
+                    "type": "string"
+                },
                 "channel": {
                     "type": "integer"
                 },
@@ -1258,6 +1317,10 @@ const docTemplate = `{
         "dashcam.EvidenceClip": {
             "type": "object",
             "properties": {
+                "alarm_id": {
+                    "description": "AlarmID is the event's id: an auto-saved clip is matched to its event by\nit, since one camera can fire several events in the same second.",
+                    "type": "string"
+                },
                 "channel": {
                     "type": "integer"
                 },
