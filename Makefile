@@ -1,4 +1,4 @@
-.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-geocode run-ingest load-geocode
+.PHONY: up up-app down migrate migrate-remote psql redis-cli logs seed reset swagger run-geocode run-ingest load-geocode fake-vss
 
 # Apply migrations against $DATABASE_URL via host psql (remote DBs, e.g. Tiger Cloud)
 migrate-remote:
@@ -20,6 +20,11 @@ run-geocode:
 # Run the ingest service (Swagger UI at http://localhost:8082/swagger/index.html)
 run-ingest:
 	go run ./cmd/ingest
+
+# Fake camera platform for local dev (:8090). Run ingest against it with
+# VSS_BASE_URL=http://localhost:8090 VSS_USERNAME=x VSS_PASSWORD=x.
+fake-vss:
+	go run ./cmd/fakevss
 
 # Start infra + app services (containerized) via the "app" compose profile
 up-app:

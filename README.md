@@ -90,6 +90,38 @@ curl "http://localhost:8081/reverse?lat=-6.1751&lon=106.8272"
 Env: `DATABASE_URL`, `REDIS_ADDR`, `GEOCODE_ADDR`, `GEOHASH_PRECISION` (7),
 `CACHE_TTL_HOURS` (720). Swagger at <http://localhost:8081/swagger/index.html>.
 
+### Dashcam clips (ingest, `/v1/dashcams/...`)
+
+The ingest service fronts the Gtrack VSS camera platform and copies clips to S3.
+
+| Env | Default | Purpose |
+|---|---|---|
+| `VSS_BASE_URL`, `VSS_USERNAME`, `VSS_PASSWORD` | empty (endpoints answer 503) | Camera platform login |
+| `VIDEO_S3_BUCKET` | `$S3_BUCKET`, else `karlo-fms-cold-storage` | Default bucket for clips |
+| `VIDEO_S3_BUCKETS` | empty | Comma-separated extra buckets a download may name (a customer's own bucket, e.g. `sibasuryastorage`). Any other bucket gets 400. |
+
+A download with `alarm_id` copies exactly that event's uploaded clip for the
+channel, found in `dashcam_alarms` (or one camera-platform search if the stored
+link fails). It never pulls from the SD card.
+
+**Local loop without the real camera platform** (its logins are rate-limited and
+shared with production):
+
+```bash
+make up                 # db + redis + LocalStack S3 (bucket karlo-fms-local-video)
+make fake-vss           # fake camera platform on :8090 (FAKE-CAM-1, FAKE-CAM-2)
+DATABASE_URL=postgres://postgres:postgres@localhost:5436/fms INGEST_API_KEY=local-dev-key \
+VSS_BASE_URL=http://localhost:8090 VSS_USERNAME=x VSS_PASSWORD=x \
+VIDEO_S3_BUCKET=karlo-fms-local-video VIDEO_S3_BUCKETS=karlo-fms-local-video \
+AWS_ENDPOINT_URL_S3=http://s3.localhost.localstack.cloud:4566 \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=ap-southeast-1 \
+make run-ingest
+```
+
+fms-backend calls the dashcam endpoints with that key (`TELEMETRY_API_KEY`).
+`dashcam_alarms` fills within ~90 s. The fake's SD-card endpoint always answers
+"no data" and logs `SD-CARD PULL`, so an accidental SD pull shows up.
+
 ## Build phases
 
 - [x] **Phase 0** — infra, core schema, RLS, canonical event.

@@ -21,10 +21,12 @@ type jobStore struct {
 
 type job struct {
 	ID     string
-	Status string // downloading | uploading | done | failed
-	S3Key  string
-	Err    string
-	done   time.Time // when it reached a terminal state, for sweeping
+	Status    string // downloading | uploading | done | failed
+	S3Key     string
+	Bucket    string
+	SizeBytes int64
+	Err       string
+	done      time.Time // when it reached a terminal state, for sweeping
 }
 
 func newJobStore() *jobStore {
@@ -33,10 +35,10 @@ func newJobStore() *jobStore {
 	return s
 }
 
-func (s *jobStore) create() *job {
+func (s *jobStore) create(bucket string) *job {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
-	j := &job{ID: hex.EncodeToString(b), Status: "downloading"}
+	j := &job{ID: hex.EncodeToString(b), Status: "downloading", Bucket: bucket}
 	s.mu.Lock()
 	s.jobs[j.ID] = j
 	s.mu.Unlock()
@@ -53,6 +55,16 @@ func (s *jobStore) set(id, status, s3key, errMsg string) {
 	j.Status, j.S3Key, j.Err = status, s3key, errMsg
 	if status == "done" || status == "failed" {
 		j.done = time.Now()
+	}
+}
+
+// finish marks a job done with the stored object's key and size.
+func (s *jobStore) finish(id, s3key string, size int64) {
+	s.set(id, "done", s3key, "")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if j, ok := s.jobs[id]; ok {
+		j.SizeBytes = size
 	}
 }
 

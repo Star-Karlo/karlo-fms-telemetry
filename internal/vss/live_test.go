@@ -65,3 +65,67 @@ func TestLiveWS(t *testing.T) {
 	}
 	t.Logf("held the socket for the window; alarms received: %d", got)
 }
+
+// TestLiveRawDeviceResponses prints the full raw device-list and status
+// responses for one camera, to see whether VSS reports SIM data usage. If any
+// data-usage field appears, the optional SIM-data phase goes ahead.
+//
+//	VSS_LIVE=1 VSS_LIVE_DEVICE=<device no> go test -run TestLiveRawDeviceResponses -v ./internal/vss/
+func TestLiveRawDeviceResponses(t *testing.T) {
+	device := os.Getenv("VSS_LIVE_DEVICE")
+	if os.Getenv("VSS_LIVE") != "1" || device == "" {
+		t.Skip("set VSS_LIVE=1 and VSS_LIVE_DEVICE with VSS_BASE_URL/USERNAME/PASSWORD to run")
+	}
+	c := New(Config{
+		BaseURL:  os.Getenv("VSS_BASE_URL"),
+		Username: os.Getenv("VSS_USERNAME"),
+		Password: os.Getenv("VSS_PASSWORD"),
+	})
+	ctx := context.Background()
+	list, err := c.post(ctx, "/vss/vehicle/findAll.action", map[string]any{"pageNum": 1, "pageCount": -1, "keyword": device})
+	if err != nil {
+		t.Fatalf("device list: %v", err)
+	}
+	t.Logf("findAll.action raw:\n%s", list)
+	status, err := c.post(ctx, "/vss/onoffline/queryMoreDeviceStatus.action", map[string]any{"deviceID": device})
+	if err != nil {
+		t.Fatalf("device status: %v", err)
+	}
+	t.Logf("queryMoreDeviceStatus.action raw:\n%s", status)
+}
+
+// TestLiveEvidenceCounts logs how many events the evidence search returns per
+// day for one camera, and how many have a video clip.
+//
+//	VSS_LIVE=1 VSS_LIVE_DEVICE=<device no> go test -run TestLiveEvidenceCounts -v ./internal/vss/
+func TestLiveEvidenceCounts(t *testing.T) {
+	device := os.Getenv("VSS_LIVE_DEVICE")
+	if os.Getenv("VSS_LIVE") != "1" || device == "" {
+		t.Skip("set VSS_LIVE=1 and VSS_LIVE_DEVICE with VSS_BASE_URL/USERNAME/PASSWORD to run")
+	}
+	c := New(Config{
+		BaseURL:  os.Getenv("VSS_BASE_URL"),
+		Username: os.Getenv("VSS_USERNAME"),
+		Password: os.Getenv("VSS_PASSWORD"),
+	})
+	now := time.Now().In(time.FixedZone("WIB", 7*3600))
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	for d := 0; d < 3; d++ {
+		day := today.AddDate(0, 0, -d)
+		evs, err := c.SearchAlarmEvidence(context.Background(), device, day, day.Add(24*time.Hour), "")
+		if err != nil {
+			t.Errorf("%s: %v", day.Format("2006-01-02"), err)
+			continue
+		}
+		video := 0
+		for _, e := range evs {
+			for _, f := range e.Files {
+				if (f.FileType == 1 || f.FileType == 2) && f.DownURL != "" {
+					video++
+					break
+				}
+			}
+		}
+		t.Logf("%s: %d events, %d with video", day.Format("2006-01-02"), len(evs), video)
+	}
+}

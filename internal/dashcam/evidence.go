@@ -82,6 +82,8 @@ func (r *EvidenceRunner) tick(ctx context.Context) {
 
 // store upserts one alarm (dedup on alarmGuid). The evidence files — clip and
 // snapshot download URLs — are kept in raw so FMS can surface and download them.
+// raw is refreshed when it changes: a camera can upload an event's clip after
+// the event was first seen. The id stays, so FMS's alarm poll doesn't re-alert.
 func (r *EvidenceRunner) store(ctx context.Context, e vss.AlarmEvidence) {
 	if e.AlarmGuid == "" {
 		return
@@ -96,7 +98,8 @@ func (r *EvidenceRunner) store(ctx context.Context, e vss.AlarmEvidence) {
 	_, err := r.pool.Exec(c, `
 INSERT INTO dashcam_alarms (device_id, alarm_id, code, occurred_at, lat, lon, raw)
 VALUES ($1, NULLIF($2,''), $3, $4, $5, $6, $7)
-ON CONFLICT (alarm_id) WHERE alarm_id IS NOT NULL DO NOTHING`,
+ON CONFLICT (alarm_id) WHERE alarm_id IS NOT NULL DO UPDATE SET raw = EXCLUDED.raw
+  WHERE dashcam_alarms.raw IS DISTINCT FROM EXCLUDED.raw`,
 		e.DeviceID, e.AlarmGuid, e.AlarmType, occurred, e.Lat, e.Lon, json.RawMessage(raw))
 	if err != nil {
 		log.Printf("evidence poller: store %s/%s: %v", e.DeviceID, e.AlarmGuid, err)

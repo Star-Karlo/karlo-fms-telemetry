@@ -1,0 +1,2 @@
+# Run inside the Linux LocalStack container; CRLF breaks them.
+scripts/localstack/*.sh text eol=lf

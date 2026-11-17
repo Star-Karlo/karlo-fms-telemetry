@@ -125,7 +125,8 @@ func main() {
 		Password: env("VSS_PASSWORD", ""),
 	})
 	videoBucket := env("VIDEO_S3_BUCKET", env("S3_BUCKET", "karlo-fms-cold-storage"))
-	dashcam.NewHandler(vssClient, h.AuthorizedRead, videoBucket, pool).Routes(r)
+	videoBuckets := strings.Split(env("VIDEO_S3_BUCKETS", ""), ",")
+	dashcam.NewHandler(vssClient, h.AuthorizedRead, videoBucket, videoBuckets, pool).Routes(r)
 
 	// Coverage/terrain spatial grid: nightly rollup of signal + ruggedness, plus
 	// the read endpoint. Seeds the hot window on startup, then rolls up daily.
