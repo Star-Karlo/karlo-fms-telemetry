@@ -18,11 +18,17 @@ type Cache struct {
 // changes, so a deploy ignores stale cache entries instead of serving them.
 // v2: COD-AB kelurahan hierarchy + OSM streets (was kecamatan-only).
 // v3: one spelling per province ("DKI Jakarta", not the data's "Dki Jakarta").
+// v4: points outside every polygon (ports, jetties, reclaimed aprons) snap to
+//
+//	the nearest kelurahan and carry admin_approx, where v3 cached an empty
+//	admin chain for them.
 //
 //	Entries live 30 days, so without this bump the corrected name would
-//	have reached a busy cell only after its cached copy expired.
+//	have reached a busy cell only after its cached copy expired — and every
+//	port already looked up would have kept answering with a blank region
+//	long after the fix shipped.
 func NewCache(rdb *redis.Client) *Cache {
-	return &Cache{rdb: rdb, prefix: "geo:v3:"}
+	return &Cache{rdb: rdb, prefix: "geo:v4:"}
 }
 
 func (c *Cache) Get(ctx context.Context, hash string) (entry, bool) {

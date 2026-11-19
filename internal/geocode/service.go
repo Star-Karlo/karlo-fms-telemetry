@@ -24,6 +24,13 @@ type Place struct {
 
 	Street      string  `json:"street,omitempty"`        // nearest OSM road name
 	StreetDistM float64 `json:"street_dist_m,omitempty"` // metres to that road
+
+	// AdminApprox marks an admin chain taken from the NEAREST kelurahan polygon
+	// rather than the one containing the point, because no polygon contained it
+	// (see AdminMaxSnapM). AdminDistM is how far outside that polygon the point
+	// fell, so a caller can judge the guess instead of trusting it blindly.
+	AdminApprox bool    `json:"admin_approx,omitempty"`
+	AdminDistM  float64 `json:"admin_dist_m,omitempty"`
 }
 
 // Result is the reverse-geocode response for one coordinate. Location fields are
@@ -39,6 +46,14 @@ type Result struct {
 	Kecamatan string  `json:"kecamatan"`
 	Kelurahan string  `json:"kelurahan"` // village (empty until ADM4 data is loaded)
 	Jalan     string  `json:"jalan"`     // nearest OSM street (empty if none within range)
+
+	// AdminApprox is true when the region was snapped from the nearest polygon
+	// instead of the containing one — the point sat outside every boundary, as
+	// a port quay or jetty does. AdminDistM is that gap in metres, omitted when
+	// the match was exact. Consumers that must not guess (geofencing, reports
+	// grouped by region) should read this rather than treat every hit alike.
+	AdminApprox bool    `json:"admin_approx"`
+	AdminDistM  float64 `json:"admin_dist_m,omitempty"`
 }
 
 // entry is what we persist in the cache (positive and negative results alike).
@@ -99,6 +114,8 @@ func result(lat, lon float64, e entry, cached bool) Result {
 		r.Kecamatan = e.Place.Kecamatan
 		r.Kelurahan = e.Place.Kelurahan
 		r.Jalan = e.Place.Street
+		r.AdminApprox = e.Place.AdminApprox
+		r.AdminDistM = e.Place.AdminDistM
 		// ADM2 name is "Kota X" for cities, else a regency → split into Kota/kabupaten.
 		if kab := e.Place.Kabupaten; strings.HasPrefix(kab, "Kota ") {
 			r.Kota = strings.TrimPrefix(kab, "Kota ")
