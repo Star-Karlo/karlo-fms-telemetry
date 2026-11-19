@@ -394,6 +394,13 @@
                     "description": "city (empty if the ADM2 is a regency)",
                     "type": "string"
                 },
+                "admin_approx": {
+                    "description": "AdminApprox is true when the region was snapped from the nearest polygon\ninstead of the containing one — the point sat outside every boundary, as\na port quay or jetty does. AdminDistM is that gap in metres, omitted when\nthe match was exact. Consumers that must not guess (geofencing, reports\ngrouped by region) should read this rather than treat every hit alike.",
+                    "type": "boolean"
+                },
+                "admin_dist_m": {
+                    "type": "number"
+                },
                 "cached": {
                     "description": "true if served from the Redis cache",
                     "type": "boolean"

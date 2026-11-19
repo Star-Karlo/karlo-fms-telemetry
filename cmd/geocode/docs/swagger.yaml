@@ -36,6 +36,16 @@ definitions:
       Kota:
         description: city (empty if the ADM2 is a regency)
         type: string
+      admin_approx:
+        description: |-
+          AdminApprox is true when the region was snapped from the nearest polygon
+          instead of the containing one — the point sat outside every boundary, as
+          a port quay or jetty does. AdminDistM is that gap in metres, omitted when
+          the match was exact. Consumers that must not guess (geofencing, reports
+          grouped by region) should read this rather than treat every hit alike.
+        type: boolean
+      admin_dist_m:
+        type: number
       cached:
         description: true if served from the Redis cache
         type: boolean
